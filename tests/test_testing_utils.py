@@ -1,5 +1,5 @@
-"""E2e learning test for grpo queuer.
-"""
+"""E2e learning test for grpo queuer."""
+
 from grpo_server import testing_utils
 import logging
 import pytest
@@ -8,13 +8,15 @@ import threading
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+
 @pytest.fixture(scope="session")
 def simple_problem():
     return testing_utils.SimpleProblem()
 
+
 def test_rewards(simple_problem):
     assert simple_problem.calculate_rewards(["3434"], ["343434"]) == [0]
-    assert simple_problem.calculate_rewards(["3434"], ["444444"]) == [2./3.]
+    assert simple_problem.calculate_rewards(["3434"], ["444444"]) == [2.0 / 3.0]
 
 
 def test_learns(simple_problem, tmp_path):
@@ -26,12 +28,15 @@ def test_learns(simple_problem, tmp_path):
     trainer.train()
     assert simple_problem.has_learned(model)
 
+
 # This test may deadlock; need a timeout.
 @pytest.mark.timeout(12)
 def test_server_learns_immediate(simple_problem, tmp_path):
     """Test that learning happens when run through queuer."""
 
-    model, trainer, queuer = simple_problem.create_split_model_and_trainer_and_queuer(tmp_path)
+    model, trainer, queuer = simple_problem.create_split_model_and_trainer_and_queuer(
+        tmp_path
+    )
 
     complete = False
 
@@ -40,6 +45,7 @@ def test_server_learns_immediate(simple_problem, tmp_path):
 
     def loop_thread():
         logger.debug("START LOOP THREAD")
+
         async def run_loop():
             nonlocal complete
             while not complete:
@@ -57,8 +63,11 @@ def test_server_learns_immediate(simple_problem, tmp_path):
                         [completions["prompt"]] * len(completions["completions"]),
                         completions["completions"],
                     )
+
                     async def reward_setter(prompt, completions, rewards):
-                        logger.debug("setting rewards: %s %s %s", prompt, completions, rewards)
+                        logger.debug(
+                            "setting rewards: %s %s %s", prompt, completions, rewards
+                        )
                         await queuer.rewards(
                             dict(
                                 prompt=completions["prompt"],
@@ -68,14 +77,17 @@ def test_server_learns_immediate(simple_problem, tmp_path):
                             ),
                         )
 
-                    task = asyncio.create_task(reward_setter(prompt, completions, rewards))
-                    with lock: tasks.append(task)
+                    task = asyncio.create_task(
+                        reward_setter(prompt, completions, rewards)
+                    )
+                    with lock:
+                        tasks.append(task)
                     # await asyncio.sleep(0.01)
             logger.debug("loop_thread exiting")
 
         import asyncio
-        asyncio.run(run_loop())
 
+        asyncio.run(run_loop())
 
     thread = threading.Thread(target=loop_thread)
     thread.start()

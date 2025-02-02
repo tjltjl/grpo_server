@@ -1,4 +1,5 @@
 import os
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # Below: modified version of GRPO trainer compute_loss
 
@@ -25,15 +26,23 @@ logdebug = logger.info
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from trl.trainer.grpo_trainer import (maybe_apply_chat_template, unwrap_model_for_generation,
-    gather_object, broadcast_object_list, pad,
-    is_conversational, PreTrainedModel, apply_chat_template)
+from trl.trainer.grpo_trainer import (
+    maybe_apply_chat_template,
+    unwrap_model_for_generation,
+    gather_object,
+    broadcast_object_list,
+    pad,
+    is_conversational,
+    PreTrainedModel,
+    apply_chat_template,
+)
 
 # pyright: basic
 # pyright: reportAttributeAccessIssue=false
 # pyright: reportOperatorIssue=false
 # pyright: reportCallIssue=false
 # pyright: reportArgumentType=false
+
 
 class GRPOTrainerSplit(trl.trainer.GRPOTrainer):
 
@@ -62,7 +71,6 @@ class GRPOTrainerSplit(trl.trainer.GRPOTrainer):
                 :, -self.max_prompt_length :
             ]
 
-
         return prompts, prompts_text, prompt_inputs
 
     def generate_completions(self, model, inputs):
@@ -75,18 +83,30 @@ class GRPOTrainerSplit(trl.trainer.GRPOTrainer):
         if self.args.use_vllm:
             # First, have main process load weights if needed
             if self.state.global_step != self._last_loaded_step:
-                with unwrap_model_for_generation(model, self.accelerator) as unwrapped_model:
+                with unwrap_model_for_generation(
+                    model, self.accelerator
+                ) as unwrapped_model:
                     state_dict = unwrapped_model.state_dict()
                 if self.accelerator.is_main_process:
-                    llm_model = self.llm.llm_engine.model_executor.driver_worker.model_runner.model
+                    llm_model = (
+                        self.llm.llm_engine.model_executor.driver_worker.model_runner.model
+                    )
                     llm_model.load_weights(state_dict.items())
                 self._last_loaded_step = self.state.global_step
 
             # Generate completions using vLLM: gather all prompts and use them in a single call in the main process
             all_prompts_text = gather_object(prompts_text)
             if self.accelerator.is_main_process:
-                outputs = self.llm.generate(all_prompts_text, sampling_params=self.sampling_params, use_tqdm=False)
-                completion_ids = [out.token_ids for completions in outputs for out in completions.outputs]
+                outputs = self.llm.generate(
+                    all_prompts_text,
+                    sampling_params=self.sampling_params,
+                    use_tqdm=False,
+                )
+                completion_ids = [
+                    out.token_ids
+                    for completions in outputs
+                    for out in completions.outputs
+                ]
             else:
                 completion_ids = [None] * len(all_prompts_text) * self.num_generations
 
@@ -95,18 +115,28 @@ class GRPOTrainerSplit(trl.trainer.GRPOTrainer):
             completion_ids = broadcast_object_list(completion_ids, from_process=0)
             process_slice = slice(
                 self.accelerator.process_index * len(prompts) * self.num_generations,
-                (self.accelerator.process_index + 1) * len(prompts) * self.num_generations,
+                (self.accelerator.process_index + 1)
+                * len(prompts)
+                * self.num_generations,
             )
             completion_ids = completion_ids[process_slice]
 
             # Pad the completions, and concatenate them with the prompts
-            completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids]
+            completion_ids = [
+                torch.tensor(ids, device=device) for ids in completion_ids
+            ]
             completion_ids = pad(completion_ids, padding_value=self.processing_class.pad_token_id)  # type: ignore
-            prompt_inputs_repeated = torch.repeat_interleave(prompt_inputs["input_ids"], self.num_generations, dim=0)
-            prompt_completion_ids = torch.cat([prompt_inputs_repeated, completion_ids], dim=1)
+            prompt_inputs_repeated = torch.repeat_interleave(
+                prompt_inputs["input_ids"], self.num_generations, dim=0
+            )
+            prompt_completion_ids = torch.cat(
+                [prompt_inputs_repeated, completion_ids], dim=1
+            )
         else:
             # Regular generation path
-            with unwrap_model_for_generation(model, self.accelerator) as unwrapped_model:
+            with unwrap_model_for_generation(
+                model, self.accelerator
+            ) as unwrapped_model:
                 prompt_completion_ids = unwrapped_model.generate(
                     **prompt_inputs, generation_config=self.generation_config
                 )
@@ -117,12 +147,20 @@ class GRPOTrainerSplit(trl.trainer.GRPOTrainer):
         flat_completions = self.processing_class.batch_decode(  # type: ignore
             completion_ids, skip_special_tokens=True
         )
-        completions = [flat_completions[i:i+self.num_generations] for i in range(0, len(flat_completions), self.num_generations)]
+        completions = [
+            flat_completions[i : i + self.num_generations]
+            for i in range(0, len(flat_completions), self.num_generations)
+        ]
 
-        prompt_completion_ids = torch.reshape(prompt_completion_ids, (len(inputs), self.num_generations, -1))
+        prompt_completion_ids = torch.reshape(
+            prompt_completion_ids, (len(inputs), self.num_generations, -1)
+        )
         logdebug("Completions: %s %s", inputs, prompt_completion_ids)
-        return [dict(input, completions=compl, extra=dict(prompt_completion_ids=ids))
-            for input, compl, ids in zip(inputs, completions, prompt_completion_ids, strict=True)
+        return [
+            dict(input, completions=compl, extra=dict(prompt_completion_ids=ids))
+            for input, compl, ids in zip(
+                inputs, completions, prompt_completion_ids, strict=True
+            )
         ]
 
     def compute_loss(
@@ -143,8 +181,12 @@ class GRPOTrainerSplit(trl.trainer.GRPOTrainer):
 
         prompts, prompts_text, prompt_inputs = self.prepare_prompts(inputs)
 
-        prompt_completion_ids = torch.cat([example["extra"]["prompt_completion_ids"] for example in inputs], axis=0)
-        rewards = torch.cat([torch.as_tensor(example["rewards"]) for example in inputs], axis=0)
+        prompt_completion_ids = torch.cat(
+            [example["extra"]["prompt_completion_ids"] for example in inputs], axis=0
+        )
+        rewards = torch.cat(
+            [torch.as_tensor(example["rewards"]) for example in inputs], axis=0
+        )
 
         prompt_length = prompt_inputs["input_ids"].size(1)
         completion_ids = prompt_completion_ids[:, prompt_length:]

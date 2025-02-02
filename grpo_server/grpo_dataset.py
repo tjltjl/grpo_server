@@ -1,8 +1,8 @@
-
 """
 The dataset source for grpo training
 that implements the control loop reversal.
 """
+
 import asyncio
 import dill
 import janus
@@ -16,6 +16,7 @@ logger.setLevel(logging.DEBUG)
 # pytest doesn't flush logger.debug()..
 logdebug = logger.info
 
+
 class ActionItem(asyncio.Event):
     def __init__(self, callable):
         self.callable = callable
@@ -28,24 +29,26 @@ class ActionItem(asyncio.Event):
         async def set_event():
             self.event.set()
 
-        asyncio.run_coroutine_threadsafe(set_event(),
-            self.event_loop
-        )
+        asyncio.run_coroutine_threadsafe(set_event(), self.event_loop)
         return return_value
+
 
 class PromptDict(t.TypedDict):
     prompt: str
+
 
 class CompletionDict(t.TypedDict):
     prompt: str
     completions: list[str]
     extra: t.Any
 
+
 class RewardDict(t.TypedDict):
     prompt: str
     completions: list[str]
     rewards: list[str]
     extra: t.Any
+
 
 class GRPOQueuer:
     queue: janus.Queue[ActionItem]
@@ -80,6 +83,7 @@ class GRPOQueuer:
             #    print("DROP ON THE FLOOR", item.data)
             # else:
             #    yield item
+
     @typechecked
     async def get_completions(self, prompt: PromptDict) -> CompletionDict:
         assert self.trainer
@@ -109,6 +113,7 @@ class GRPOQueuer:
     async def rewards(self, rewards: list[RewardDict]) -> str:
         logdebug("rewards: start %s", rewards)
         queue = self.async_queue
+
         # Pipe rewards straight to learning
         #
         def action():
@@ -138,6 +143,7 @@ class GRPOQueuer:
         self.queue = janus.Queue()
         self.model = None
         self.trainer = None
+
 
 # Register with dill to allow pickling
 dill.register(GRPOQueuer)

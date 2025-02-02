@@ -56,9 +56,7 @@ def completions(
 ) -> CompletionsResponse:
     # Mock implementation - replace with real completion logic
     completions = [[p + "_completion"] for p in request.prompts]
-    return CompletionsResponse(
-        prompts=request.prompts,
-        completions=completions)
+    return CompletionsResponse(prompts=request.prompts, completions=completions)
 
 
 class RewardsRequest(BaseModel):

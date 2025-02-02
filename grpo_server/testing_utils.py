@@ -18,7 +18,6 @@ import grpo_server.grpo_trainer
 import grpo_server.grpo_dataset
 
 
-
 class GeneratorWrapper:
     def __init__(self, generator):
         self.generator = generator
@@ -35,13 +34,14 @@ class GeneratorWrapper:
     def __getstate__(self):
         # Return a state that excludes the generator itself
         state = self.__dict__.copy()
-        del state['generator']
+        del state["generator"]
         return state
 
     def __setstate__(self, state):
         # Restore the state and recreate the generator
         self.__dict__.update(state)
         raise Exception("Can't unpickle")
+
 
 @dataclasses.dataclass
 class SimpleLinearLMOutput(transformers.utils.generic.ModelOutput):
@@ -100,16 +100,16 @@ class SimpleLinearLM(PreTrainedModel, GenerationMixin):
 
     def prepare_inputs_for_generation(  # type: ignore
         self, input_ids, past=None, attention_mask=None, use_cache=None, **kwargs  # type: ignore
-    ): # type: ignore
+    ):  # type: ignore
         return dict(input_ids=input_ids)  # type: ignore
 
 
 class SimpleProblem:
     def __init__(self):
-        #model_name = "HuggingFaceTB/SmolLM-135M"
-        #tokenizer = transformers.AutoTokenizer.from_pretrained(
+        # model_name = "HuggingFaceTB/SmolLM-135M"
+        # tokenizer = transformers.AutoTokenizer.from_pretrained(
         #    model_name, padding_side="left"
-        #)
+        # )
         # Would use 2 but the special tokens get in the way
         self.n_vocab = 40
 
@@ -118,14 +118,16 @@ class SimpleProblem:
         self.outside_tokenizer = self.create_tokenizer()
 
         self.dataset = datasets.Dataset.from_list(
-            [dict(prompt=self.generate_prompt(rng, self.outside_tokenizer)) for i in range(100)]
+            [
+                dict(prompt=self.generate_prompt(rng, self.outside_tokenizer))
+                for i in range(100)
+            ]
         )
-
 
     def create_tokenizer(self):
         """Tokenizers are not re-entrant, create one."""
         tokenizer = transformers.AutoTokenizer.from_pretrained(
-            "./test_data/smolm135_tokenizer" # "/tokenizer_config.json",
+            "./test_data/smolm135_tokenizer"  # "/tokenizer_config.json",
         )
 
         tokenizer.pad_token_id = tokenizer.eos_token_id
@@ -164,7 +166,6 @@ class SimpleProblem:
         )
         # trainer.train()
 
-
         trainer_params = dict(
             model=model,
             reward_funcs=[self.calculate_rewards],
@@ -198,8 +199,7 @@ class SimpleProblem:
             num_train_epochs=1,
             max_steps=200,
             use_cpu=True,  # cpu
-            save_strategy="no", # Don't save (pickling queuer is no good)'
-
+            save_strategy="no",  # Don't save (pickling queuer is no good)'
             # Otherwise, we get an error from accelerate dataset batching strs
             accelerator_config=dict(dispatch_batches=False),
         )
@@ -226,19 +226,23 @@ class SimpleProblem:
 
         return model, trainer, queuer
 
-
     @typechecked
-    def calculate_rewards(self, prompts: list[str], completions: list[str], **kwargs) -> list[float]:
+    def calculate_rewards(
+        self, prompts: list[str], completions: list[str], **kwargs
+    ) -> list[float]:
         """Reward: just keep repeating the last token."""
         # print(prompts, completions, kwargs)
         res = []
         for i, (p, c) in enumerate(zip(prompts, completions)):
-            ids = self.outside_tokenizer(p).input_ids + self.outside_tokenizer(c).input_ids
+            ids = (
+                self.outside_tokenizer(p).input_ids
+                + self.outside_tokenizer(c).input_ids
+            )
             # print(ids)
             d = (np.diff(ids) == 0) + 0.0
             # print(d)
             res.append(float(np.mean(d)))
-            #if i == 0:
+            # if i == 0:
             #    print(p, c, ids, res[-1])  # d,
         print("REWARDS", res)
         return res
