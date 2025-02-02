@@ -15,12 +15,13 @@ def simple_problem():
 
 
 def test_rewards(simple_problem):
+    """Test the calculate_rewards function in simple_problem"""
     assert simple_problem.calculate_rewards(["3434"], ["343434"]) == [0]
     assert simple_problem.calculate_rewards(["3434"], ["444444"]) == [2.0 / 3.0]
 
 
-def test_learns(simple_problem, tmp_path):
-    """Test that the problem is ok, i.e., learning happens normally"""
+def test_learns_offline(simple_problem, tmp_path):
+    """Test that the problem is ok offline."""
 
     model, trainer = simple_problem.create_normal_model_and_trainer(tmp_path)
 
@@ -31,7 +32,7 @@ def test_learns(simple_problem, tmp_path):
 
 # This test may deadlock; need a timeout.
 @pytest.mark.timeout(12)
-def test_server_learns_immediate(simple_problem, tmp_path):
+def test_learns_queuer(simple_problem, tmp_path):
     """Test that learning happens when run through queuer."""
 
     model, trainer, queuer = simple_problem.create_split_model_and_trainer_and_queuer(
@@ -89,7 +90,7 @@ def test_server_learns_immediate(simple_problem, tmp_path):
 
         asyncio.run(run_loop())
 
-    thread = threading.Thread(target=loop_thread)
+    thread = threading.Thread(target=loop_thread, daemon=True)
     thread.start()
 
     # assert not simple_problem.has_learned(model)
@@ -98,3 +99,7 @@ def test_server_learns_immediate(simple_problem, tmp_path):
     # assert simple_problem.has_learned(model)
 
     thread.join(timeout=1)
+
+
+# @pytest.mark.timeout(12)
+# def test_learns_service(simple_problem, tmp_path):
