@@ -14,7 +14,8 @@ jobs:
   ci:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # os: [ubuntu-latest, macos-latest] # Too expensive, 10x price
+        os: [ubuntu-latest]
         python-version: ["3.12"]
 
     runs-on: ${{ matrix.os }}
