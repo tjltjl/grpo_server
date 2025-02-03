@@ -65,6 +65,11 @@ class SimpleProblem:
                 for i in range(100)
             ]
         )
+        self.model_config = simple_linear_lm.SimpleLinearLMConfig(
+            vocab_size=self.n_vocab,
+            context_size=2,
+            hidden_dim=5,
+        )
 
     def create_tokenizer(self):
         """Tokenizers are not re-entrant, create one."""
@@ -87,7 +92,7 @@ class SimpleProblem:
                 return prompt
 
     def create_normal_model_and_trainer(self, output_dir):
-        model = simple_linear_lm.SimpleLinearLM(self.n_vocab, 2, 5)
+        model = simple_linear_lm.SimpleLinearLM(self.model_config)
 
         self.grpo_config = trl.trainer.grpo_trainer.GRPOConfig(
             # beta=0.1,
@@ -122,7 +127,7 @@ class SimpleProblem:
         return model, trainer
 
     def create_split_model_and_trainer_and_queuer(self, output_dir):
-        model = simple_linear_lm.SimpleLinearLM(self.n_vocab, 2, 5)
+        model = simple_linear_lm.SimpleLinearLM(self.model_config)
 
         self.grpo_config = trl.trainer.grpo_trainer.GRPOConfig(
             # beta=0.1,
