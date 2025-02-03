@@ -3,12 +3,16 @@ The dataset source for grpo training
 that implements the control loop reversal.
 """
 
+from abc import ABC, abstractmethod
 import asyncio
+import datasets
 import dill
 import janus
 import logging
 import pydantic_settings
 import queue
+import transformers
+import trl.trainer.grpo_trainer
 from typeguard import typechecked
 import typing as t
 
@@ -17,6 +21,8 @@ logger.setLevel(logging.DEBUG)
 # pytest doesn't flush logger.debug()..
 logdebug = logger.info
 
+from grpo_server import grpo_trainer_reversed
+
 
 class TrainingSettings(pydantic_settings.BaseSettings):
     # Model to start from
@@ -24,7 +30,7 @@ class TrainingSettings(pydantic_settings.BaseSettings):
     max_completion_length: int = 6
     num_completions_per_prompt: int = 3
 
-    training_batch_size: int = 4
+    training_batch_size: int = 1  # Larger needs debugging (padding)
     learning_rate: float = 5e-2
     gradient_accumulation_steps: int = 1
     logging_steps: int = 1
@@ -47,9 +53,6 @@ class RewardDict(t.TypedDict):
     extra: t.Any
 
 
-from abc import ABC, abstractmethod
-
-
 class DatasetBackend(ABC):
     """The main training interface that the outside world connects to.
 
@@ -70,8 +73,57 @@ class DatasetBackend(ABC):
         pass
 
 
-def create_dataset_backend(training_settings: TrainingSettings):
-    pass
+def create_queuer(training_settings: TrainingSettings, output_dir: str):
+    model = transformers.AutoModel.from_pretrained(training_settings.model_id)
+
+    grpo_config = trl.trainer.grpo_trainer.GRPOConfig(
+        # beta=0.1,
+        per_device_train_batch_size=training_settings.training_batch_size,
+        output_dir=output_dir,
+        do_train=True,
+        do_eval=False,
+        learning_rate=training_settings.learning_rate,
+        logging_steps=training_settings.logging_steps,
+        gradient_accumulation_steps=training_settings.gradient_accumulation_steps,
+        max_completion_length=training_settings.max_completion_length,
+        eval_on_start=False,
+        label_names=[],
+        save_steps=50,
+        weight_decay=0.001,
+        num_train_epochs=1,
+        max_steps=200,
+        use_cpu=True,  # cpu
+        save_strategy="no",  # Don't save (pickling queuer is no good)'
+        # Otherwise, we get an error from accelerate dataset batching strs
+        accelerator_config=dict(dispatch_batches=False),
+    )
+    # trainer.train()
+
+    queuer = GRPOQueuer(model)
+
+    dataset = datasets.Dataset.from_generator(
+        GeneratorWrapper(queuer.data_getter()), streaming=True
+    )
+
+    # tokenizer = transformers.AutoTokenizer.from_pretrained(training_settings.model_id)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        "./test_data/smolm135_tokenizer"
+    )
+
+    trainer_params = dict(
+        model=model,
+        reward_funcs=[],
+        args=grpo_config,
+        train_dataset=dataset,
+        # peft_config=peft.LoraConfig(task_type="CAUSAL_LM"),
+        processing_class=tokenizer,
+    )
+
+    trainer = grpo_trainer_reversed.GRPOTrainerSplit(**trainer_params)  # type: ignore
+
+    queuer.set_trainer(trainer)
+
+    return queuer
 
 
 class ActionItem(asyncio.Event):
@@ -187,3 +239,30 @@ class GRPOQueuer(DatasetBackend):
 
 # Register with dill to allow pickling
 dill.register(GRPOQueuer)
+
+
+class GeneratorWrapper:
+    """Wrap a generator so that trying to pickle/dill it doesn't crash."""
+
+    def __init__(self, generator):
+        self.generator = generator
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return next(self.generator)
+
+    def __call__(self):
+        return self
+
+    def __getstate__(self):
+        # Return a state that excludes the generator itself
+        state = self.__dict__.copy()
+        del state["generator"]
+        return state
+
+    def __setstate__(self, state):
+        # Restore the state and recreate the generator
+        self.__dict__.update(state)
+        raise Exception("Can't unpickle")

@@ -15,36 +15,8 @@ import torch.nn as nn
 from typeguard import typechecked
 
 import grpo_server.grpo_trainer_reversed
-import grpo_server.grpo_queuer
+from grpo_server import grpo_queuer
 from grpo_server.testing import simple_linear_lm
-
-
-class GeneratorWrapper:
-    """Wrap a generator so that trying to pickle/dill it doesn't crash."""
-
-    def __init__(self, generator):
-        self.generator = generator
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        return next(self.generator)
-
-    def __call__(self):
-        return self
-
-    def __getstate__(self):
-        # Return a state that excludes the generator itself
-        state = self.__dict__.copy()
-        del state["generator"]
-        return state
-
-    def __setstate__(self, state):
-        # Restore the state and recreate the generator
-        self.__dict__.update(state)
-        raise Exception("Can't unpickle")
-
 
 # This is the config that is saved to test_data/simple_linear_40_5/config.json
 # to allow getting that model with from_pretrained.
@@ -86,9 +58,6 @@ class SimpleProblem:
         tokenizer.pad_token = tokenizer.eos_token
         return tokenizer
 
-    def create_model(self):
-        return transformers.AutoModel.from_pretrained(self.model_name)
-
     def generate_prompt(self, rng, tokenizer):
         while True:
             # Generate until ok (may get too large tokens
@@ -101,7 +70,7 @@ class SimpleProblem:
 
     def create_normal_model_and_trainer(self, output_dir):
         """Create a model and a trainer on conventional dataset."""
-        model = self.create_model()
+        model = transformers.AutoModel.from_pretrained(self.model_name)
 
         self.grpo_config = trl.trainer.grpo_trainer.GRPOConfig(
             # beta=0.1,
@@ -137,49 +106,15 @@ class SimpleProblem:
 
     def create_split_model_and_trainer_and_queuer(self, output_dir):
         """Create model and trainer + queuer to reverse the control flow"""
-        model = self.create_model()
 
-        self.grpo_config = trl.trainer.grpo_trainer.GRPOConfig(
-            # beta=0.1,
-            per_device_train_batch_size=1,
-            output_dir=output_dir,
-            do_train=True,
-            do_eval=False,
-            learning_rate=5e-2,
-            logging_steps=1,
-            gradient_accumulation_steps=1,
-            max_completion_length=6,
-            eval_on_start=False,
-            label_names=[],
-            save_steps=50,
-            weight_decay=0.001,
-            num_train_epochs=1,
-            max_steps=200,
-            use_cpu=True,  # cpu
-            save_strategy="no",  # Don't save (pickling queuer is no good)'
-            # Otherwise, we get an error from accelerate dataset batching strs
-            accelerator_config=dict(dispatch_batches=False),
+        # The defaults are the test values...
+        training_settings = grpo_queuer.TrainingSettings()
+
+        queuer: grpo_queuer.GRPOQueuer = grpo_queuer.create_queuer(
+            training_settings, output_dir=output_dir
         )
-        # trainer.train()
-
-        queuer = grpo_server.grpo_queuer.GRPOQueuer(model)
-
-        dataset = datasets.Dataset.from_generator(
-            GeneratorWrapper(queuer.data_getter()), streaming=True
-        )
-
-        trainer_params = dict(
-            model=model,
-            reward_funcs=[self.calculate_rewards],
-            args=self.grpo_config,
-            train_dataset=dataset,
-            # peft_config=peft.LoraConfig(task_type="CAUSAL_LM"),
-            processing_class=self.create_tokenizer(),
-        )
-
-        trainer = grpo_server.grpo_trainer_reversed.GRPOTrainerSplit(**trainer_params)  # type: ignore
-
-        queuer.set_trainer(trainer)
+        trainer = queuer.trainer
+        model = queuer.model
 
         return model, trainer, queuer
 

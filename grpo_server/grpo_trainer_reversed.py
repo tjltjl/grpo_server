@@ -181,6 +181,10 @@ class GRPOTrainerSplit(trl.trainer.GRPOTrainer):
 
         prompts, prompts_text, prompt_inputs = self.prepare_prompts(inputs)
 
+        print(
+            "COMPLIDS",
+            [example["extra"]["prompt_completion_ids"] for example in inputs],
+        )
         prompt_completion_ids = torch.cat(
             [example["extra"]["prompt_completion_ids"] for example in inputs], axis=0
         )

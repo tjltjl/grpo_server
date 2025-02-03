@@ -1,4 +1,5 @@
 {
+  "_name_or_path": "./test_data/simple_linear_40_5",
   "architectures": [
     "SimpleLinearLM"
   ],
