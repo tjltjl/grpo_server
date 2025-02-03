@@ -16,6 +16,7 @@ import pydantic_settings
 import typing as t
 
 import grpo_trainer
+from grpo_trainer import grpo_dataset
 
 
 @functools.cache
@@ -24,24 +25,9 @@ def get_settings():
     return Settings()  # type: ignore
 
 
-class ModelSettings(pydantic_settings.BaseSettings):
-    model_id: str = "HuggingFaceTB/SmolLM-135M"
-    max_completion_length: int = 6
-    num_completions_per_prompt: int = 3
-
-
-class TrainingSettings(pydantic_settings.BaseSettings):
-    training_batch_size: int = 4
-    learning_rate: float = 5e-2
-    gradient_accumulation_steps: int = 1
-    logging_steps: int = 1
-    save_steps: int = 50
-
-
 class Settings(pydantic_settings.BaseSettings):
     api_key: str
-    model: ModelSettings = ModelSettings()
-    training: TrainingSettings = TrainingSettings()
+    training: grpo_dataset.TrainingSettings = grpo_dataset.TrainingSettings()
 
 
 def verify_api_key(

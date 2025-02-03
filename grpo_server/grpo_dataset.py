@@ -7,6 +7,7 @@ import asyncio
 import dill
 import janus
 import logging
+import pydantic_settings
 import queue
 from typeguard import typechecked
 import typing as t
@@ -15,6 +16,18 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 # pytest doesn't flush logger.debug()..
 logdebug = logger.info
+
+
+class TrainingSettings(pydantic_settings.BaseSettings):
+    # Model to start from
+    model_id: str = "./test_data/simple_linear_40_5"
+    max_completion_length: int = 6
+    num_completions_per_prompt: int = 3
+
+    training_batch_size: int = 4
+    learning_rate: float = 5e-2
+    gradient_accumulation_steps: int = 1
+    logging_steps: int = 1
 
 
 class PromptDict(t.TypedDict):
