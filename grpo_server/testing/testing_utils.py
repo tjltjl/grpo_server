@@ -16,9 +16,12 @@ from typeguard import typechecked
 
 import grpo_server.grpo_trainer
 import grpo_server.grpo_dataset
+from grpo_server.testing import simple_linear_lm
 
 
 class GeneratorWrapper:
+    """Wrap a generator so that trying to pickle/dill it doesn't crash."""
+
     def __init__(self, generator):
         self.generator = generator
 
@@ -41,67 +44,6 @@ class GeneratorWrapper:
         # Restore the state and recreate the generator
         self.__dict__.update(state)
         raise Exception("Can't unpickle")
-
-
-@dataclasses.dataclass
-class SimpleLinearLMOutput(transformers.utils.generic.ModelOutput):
-    logits: torch.Tensor
-
-
-class SimpleLinearLM(PreTrainedModel, GenerationMixin):
-    def __init__(self, vocab_size, context_size, hidden_dim):
-        super().__init__(PretrainedConfig())
-        self.context_size = context_size
-        self.embeddings = nn.Embedding(vocab_size, hidden_dim)
-        self.linear = nn.Linear(context_size * hidden_dim, vocab_size)
-
-    def forward(self, input_ids, return_dict=True, num_logits_to_keep=None):
-        #  print(input_ids)
-
-        batch_size, seq_len = input_ids.shape
-        windows = []
-        for i in range(seq_len):
-            if i < self.context_size - 1:
-                padded = torch.zeros(
-                    (batch_size, self.context_size),
-                    dtype=input_ids.dtype,
-                    device=input_ids.device,
-                )
-                if i > 0:
-                    padded[:, -i - 1 :] = input_ids[:, : i + 1]
-                windows.append(padded)
-            else:
-                windows.append(input_ids[:, i - self.context_size + 1 : i + 1])
-        input_ids = torch.stack(windows, dim=1)
-
-        # input_ids shape: (batch_size, seq_len, context_size)
-        batch_size, seq_len, _ = input_ids.shape
-        embeds = self.embeddings(
-            input_ids
-        )  # (batch_size, seq_len, context_size, hidden_dim)
-        flatten = embeds.view(
-            batch_size * seq_len, -1
-        )  # (batch_size * seq_len, context_size * hidden_dim)
-        logits = self.linear(flatten)  # (batch_size * seq_len, vocab_size)
-        logits = logits.view(
-            batch_size, seq_len, -1
-        )  # (batch_size, seq_len, vocab_size)
-
-        if num_logits_to_keep is not None:
-            logits = logits[:, -num_logits_to_keep:, :]
-
-        # print("LOGITS", torch.min(logits))
-        # print(logits.shape)
-        if return_dict:
-            return SimpleLinearLMOutput(
-                logits=logits,
-            )
-        return logits
-
-    def prepare_inputs_for_generation(  # type: ignore
-        self, input_ids, past=None, attention_mask=None, use_cache=None, **kwargs  # type: ignore
-    ):  # type: ignore
-        return dict(input_ids=input_ids)  # type: ignore
 
 
 class SimpleProblem:
@@ -145,7 +87,7 @@ class SimpleProblem:
                 return prompt
 
     def create_normal_model_and_trainer(self, output_dir):
-        model = SimpleLinearLM(self.n_vocab, 2, 5)
+        model = simple_linear_lm.SimpleLinearLM(self.n_vocab, 2, 5)
 
         self.grpo_config = trl.trainer.grpo_trainer.GRPOConfig(
             # beta=0.1,
@@ -180,7 +122,7 @@ class SimpleProblem:
         return model, trainer
 
     def create_split_model_and_trainer_and_queuer(self, output_dir):
-        model = SimpleLinearLM(self.n_vocab, 2, 5)
+        model = simple_linear_lm.SimpleLinearLM(self.n_vocab, 2, 5)
 
         self.grpo_config = trl.trainer.grpo_trainer.GRPOConfig(
             # beta=0.1,

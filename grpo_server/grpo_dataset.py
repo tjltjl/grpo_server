@@ -17,22 +17,6 @@ logger.setLevel(logging.DEBUG)
 logdebug = logger.info
 
 
-class ActionItem(asyncio.Event):
-    def __init__(self, callable):
-        self.callable = callable
-        self.event_loop = asyncio.get_running_loop()
-        self.event = asyncio.Event()
-
-    def run(self):
-        self.result, return_value = self.callable()
-
-        async def set_event():
-            self.event.set()
-
-        asyncio.run_coroutine_threadsafe(set_event(), self.event_loop)
-        return return_value
-
-
 class PromptDict(t.TypedDict):
     prompt: str
 
@@ -50,7 +34,47 @@ class RewardDict(t.TypedDict):
     extra: t.Any
 
 
-class GRPOQueuer:
+from abc import ABC, abstractmethod
+
+
+class DatasetBackend(ABC):
+    """The main training interface that the outside world connects to.
+
+    The core interface of grpo_server.
+
+    Two operations:
+
+        prompt -> completions (answers)
+
+        rewards -> ... (fed to training)
+    """
+
+    @abstractmethod
+    async def get_completions(self, prompt: PromptDict) -> CompletionDict:
+        pass
+
+    @abstractmethod
+    async def rewards(self, rewards: list[RewardDict]) -> str:
+        pass
+
+
+class ActionItem(asyncio.Event):
+    def __init__(self, callable):
+        self.callable = callable
+        self.event_loop = asyncio.get_running_loop()
+        self.event = asyncio.Event()
+
+    def run(self):
+        self.result, return_value = self.callable()
+
+        async def set_event():
+            self.event.set()
+
+        asyncio.run_coroutine_threadsafe(set_event(), self.event_loop)
+        return return_value
+
+
+class GRPOQueuer(DatasetBackend):
     queue: janus.Queue[ActionItem]
     async_queue: t.Any
     sync_queue: t.Any

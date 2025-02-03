@@ -10,23 +10,48 @@ happens outside this server.
 from contextlib import asynccontextmanager
 import docker.errors
 import fastapi
+import functools
 from pydantic import BaseModel
+import pydantic_settings
 import typing as t
 
 import grpo_trainer
 
 
-def verify_api_key():
-    # Read API key once at startup
-    with open("sandboxer_api_key") as f:
-        api_key = f.read().strip()
+@functools.cache
+def get_settings():
+    # pyright gets confused by pydantic_settings?
+    return Settings()  # type: ignore
 
-    def verify_key(api_key_header: str = fastapi.Header(None, alias="api-key")):
-        if api_key_header != api_key:
-            raise fastapi.HTTPException(status_code=401, detail="Invalid API key")
-        return api_key_header
 
-    return verify_key
+class ModelSettings(pydantic_settings.BaseSettings):
+    model_id: str = "HuggingFaceTB/SmolLM-135M"
+    max_completion_length: int = 6
+    num_completions_per_prompt: int = 3
+
+
+class TrainingSettings(pydantic_settings.BaseSettings):
+    training_batch_size: int = 4
+    learning_rate: float = 5e-2
+    gradient_accumulation_steps: int = 1
+    logging_steps: int = 1
+    save_steps: int = 50
+
+
+class Settings(pydantic_settings.BaseSettings):
+    api_key: str
+    model: ModelSettings = ModelSettings()
+    training: TrainingSettings = TrainingSettings()
+
+
+def verify_api_key(
+    settings: Settings = fastapi.Depends(get_settings),
+    api_key_header: str = fastapi.Header(None, alias="api-key"),
+):
+
+    if api_key_header != settings.api_key:
+        raise fastapi.HTTPException(status_code=401, detail="Invalid API key")
+    return True
 
 
 @asynccontextmanager
@@ -52,7 +77,7 @@ class CompletionsResponse(BaseModel):
 
 @app.post("/completions", response_model=CompletionsResponse)
 def completions(
-    request: CompletionsRequest, api_key: str = fastapi.Depends(verify_api_key)
+    request: CompletionsRequest, api_key_check: bool = fastapi.Depends(verify_api_key)
 ) -> CompletionsResponse:
     # Mock implementation - replace with real completion logic
     completions = [[p + "_completion"] for p in request.prompts]
@@ -67,7 +92,7 @@ class RewardsRequest(BaseModel):
 
 @app.post("/rewards")
 def rewards(
-    request: RewardsRequest, api_key: str = fastapi.Depends(verify_api_key)
+    request: RewardsRequest, api_key_check: bool = fastapi.Depends(verify_api_key)
 ) -> dict[str, t.Any]:
     # Mock implementation - replace with real rewards logic
     return {"stats": {}}

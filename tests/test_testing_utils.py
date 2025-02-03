@@ -1,6 +1,6 @@
 """E2e learning test for grpo queuer."""
 
-from grpo_server import testing_utils
+from grpo_server.testing import testing_utils
 import logging
 import pytest
 import threading
