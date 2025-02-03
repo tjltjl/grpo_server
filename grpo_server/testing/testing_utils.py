@@ -46,6 +46,15 @@ class GeneratorWrapper:
         raise Exception("Can't unpickle")
 
 
+# This is the config that is saved to test_data/simple_linear_40_5/config.json
+# to allow getting that model with from_pretrained.
+SIMPLE_MODEL_CONFIG = simple_linear_lm.SimpleLinearLMConfig(
+    vocab_size=40,
+    context_size=2,
+    hidden_dim=5,
+)
+
+
 class SimpleProblem:
     def __init__(self):
         # model_name = "HuggingFaceTB/SmolLM-135M"
@@ -65,11 +74,7 @@ class SimpleProblem:
                 for i in range(100)
             ]
         )
-        self.model_config = simple_linear_lm.SimpleLinearLMConfig(
-            vocab_size=self.n_vocab,
-            context_size=2,
-            hidden_dim=5,
-        )
+        self.model_name = "./test_data/simple_linear_40_5"
 
     def create_tokenizer(self):
         """Tokenizers are not re-entrant, create one."""
@@ -80,6 +85,9 @@ class SimpleProblem:
         tokenizer.pad_token_id = tokenizer.eos_token_id
         tokenizer.pad_token = tokenizer.eos_token
         return tokenizer
+
+    def create_model(self):
+        return transformers.AutoModel.from_pretrained(self.model_name)
 
     def generate_prompt(self, rng, tokenizer):
         while True:
@@ -92,7 +100,7 @@ class SimpleProblem:
                 return prompt
 
     def create_normal_model_and_trainer(self, output_dir):
-        model = simple_linear_lm.SimpleLinearLM(self.model_config)
+        model = self.create_model()
 
         self.grpo_config = trl.trainer.grpo_trainer.GRPOConfig(
             # beta=0.1,
@@ -127,7 +135,7 @@ class SimpleProblem:
         return model, trainer
 
     def create_split_model_and_trainer_and_queuer(self, output_dir):
-        model = simple_linear_lm.SimpleLinearLM(self.model_config)
+        model = self.create_model()
 
         self.grpo_config = trl.trainer.grpo_trainer.GRPOConfig(
             # beta=0.1,
