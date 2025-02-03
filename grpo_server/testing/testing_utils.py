@@ -15,7 +15,7 @@ import torch.nn as nn
 from typeguard import typechecked
 
 import grpo_server.grpo_trainer_reversed
-import grpo_server.grpo_querier
+import grpo_server.grpo_queuer
 from grpo_server.testing import simple_linear_lm
 
 
@@ -162,7 +162,7 @@ class SimpleProblem:
         )
         # trainer.train()
 
-        queuer = grpo_server.grpo_dataset.GRPOQueuer(model)
+        queuer = grpo_server.grpo_queuer.GRPOQueuer(model)
 
         dataset = datasets.Dataset.from_generator(
             GeneratorWrapper(queuer.data_getter()), streaming=True
@@ -177,7 +177,7 @@ class SimpleProblem:
             processing_class=self.create_tokenizer(),
         )
 
-        trainer = grpo_server.grpo_trainer.GRPOTrainerSplit(**trainer_params)  # type: ignore
+        trainer = grpo_server.grpo_trainer_reversed.GRPOTrainerSplit(**trainer_params)  # type: ignore
 
         queuer.set_trainer(trainer)
 

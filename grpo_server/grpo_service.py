@@ -15,7 +15,7 @@ from pydantic import BaseModel
 import pydantic_settings
 import typing as t
 
-from grpo_trainer import grpo_queuer
+from grpo_server import grpo_queuer
 
 
 @functools.cache

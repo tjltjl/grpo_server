@@ -58,7 +58,6 @@ class DatasetBackend(ABC):
     Two operations:
 
         prompt -> completions (answers)
-
         rewards -> ... (fed to training)
     """
 
@@ -69,6 +68,10 @@ class DatasetBackend(ABC):
     @abstractmethod
     async def rewards(self, rewards: list[RewardDict]) -> str:
         pass
+
+
+def create_dataset_backend(training_settings: TrainingSettings):
+    pass
 
 
 class ActionItem(asyncio.Event):
