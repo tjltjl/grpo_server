@@ -14,8 +14,8 @@ import torch
 import torch.nn as nn
 from typeguard import typechecked
 
-import grpo_server.grpo_trainer
-import grpo_server.grpo_dataset
+import grpo_server.grpo_trainer_reversed
+import grpo_server.grpo_querier
 from grpo_server.testing import simple_linear_lm
 
 
@@ -100,6 +100,7 @@ class SimpleProblem:
                 return prompt
 
     def create_normal_model_and_trainer(self, output_dir):
+        """Create a model and a trainer on conventional dataset."""
         model = self.create_model()
 
         self.grpo_config = trl.trainer.grpo_trainer.GRPOConfig(
@@ -135,6 +136,7 @@ class SimpleProblem:
         return model, trainer
 
     def create_split_model_and_trainer_and_queuer(self, output_dir):
+        """Create model and trainer + queuer to reverse the control flow"""
         model = self.create_model()
 
         self.grpo_config = trl.trainer.grpo_trainer.GRPOConfig(

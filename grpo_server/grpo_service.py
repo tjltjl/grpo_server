@@ -15,8 +15,7 @@ from pydantic import BaseModel
 import pydantic_settings
 import typing as t
 
-import grpo_trainer
-from grpo_trainer import grpo_dataset
+from grpo_trainer import grpo_queuer
 
 
 @functools.cache
@@ -27,7 +26,7 @@ def get_settings():
 
 class Settings(pydantic_settings.BaseSettings):
     api_key: str
-    training: grpo_dataset.TrainingSettings = grpo_dataset.TrainingSettings()
+    training: grpo_queuer.TrainingSettings = grpo_queuer.TrainingSettings()
 
 
 def verify_api_key(
