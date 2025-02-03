@@ -18,6 +18,8 @@ class SimpleLinearLMConfig(PretrainedConfig):
 
 
 class SimpleLinearLM(PreTrainedModel, GenerationMixin):
+    config_class = SimpleLinearLMConfig
+
     def __init__(self, config: SimpleLinearLMConfig):
         super().__init__(config)
         self.embeddings = nn.Embedding(self.config.vocab_size, self.config.hidden_dim)
@@ -72,3 +74,9 @@ class SimpleLinearLM(PreTrainedModel, GenerationMixin):
         self, input_ids, past=None, attention_mask=None, use_cache=None, **kwargs  # type: ignore
     ):  # type: ignore
         return dict(input_ids=input_ids)  # type: ignore
+
+
+# Register in order to be able to load the simple
+# model from a string
+transformers.AutoConfig.register(SimpleLinearLMConfig.model_type, SimpleLinearLMConfig)
+transformers.AutoModel.register(SimpleLinearLMConfig, SimpleLinearLM)

@@ -1,0 +1,11 @@
+{
+  "architectures": [
+    "SimpleLinearLM"
+  ],
+  "context_size": 2,
+  "hidden_dim": 5,
+  "model_type": "simple_linear_lm",
+  "torch_dtype": "float32",
+  "transformers_version": "4.48.1",
+  "vocab_size": 40
+}
