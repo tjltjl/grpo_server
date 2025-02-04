@@ -16,6 +16,7 @@ import pydantic_settings
 import typing as t
 
 from grpo_server import grpo_queuer
+from grpo_server.data import *
 
 
 @functools.cache
@@ -26,6 +27,7 @@ def get_settings():
 
 class Settings(pydantic_settings.BaseSettings):
     api_key: str
+    output_dir: str
     training: grpo_queuer.TrainingSettings = grpo_queuer.TrainingSettings()
 
 
@@ -41,58 +43,35 @@ def verify_api_key(
 
 @asynccontextmanager
 async def lifespan(app: fastapi.FastAPI):
-    # Load the ML model
-    # TODO
-    # the_trainer = grpo_trainer.grpo_trainer()
-    yield
-    # the_trainer.stop()
+    settings = get_settings()
+
+    async with grpo_queuer.create_queuer(
+        settings.training, settings.output_dir
+    ) as queuer:
+        app.state.queuer = queuer
+        print("APP STATE QUEUER", app.state.queuer)
+
+        yield
+        print("OUT OF LIFESPAN")
+
+
+def get_queuer() -> grpo_queuer.BaseQueuer:
+    return app.state.queuer
 
 
 app = fastapi.FastAPI(lifespan=lifespan)
 
 
-class CompletionsRequest(BaseModel):
-    prompt: str
-
-
-class CompletionsResponse(BaseModel):
-    prompt: str
-    completions: list[str]
-    completion_tokens: list[list[int]]  # Needed to ensure we respond correctly.
-    model_version: tuple[str, int]  # uuid of run + number of changes
-
-
 @app.post("/completions", response_model=CompletionsResponse)
-def completions(
+async def completions(
     request: CompletionsRequest, api_key_check: bool = fastapi.Depends(verify_api_key)
 ) -> CompletionsResponse:
-    # Mock implementation - replace with real completion logic
-    completions = [request.prompt + "_completion"] * 2
-    return CompletionsResponse(
-        prompt=request.prompt, completions=completions, completion_tokens=[[]]
-    )
-
-
-class RewardsRequest(BaseModel):
-    prompt: str
-    completions: list[str]
-    completion_tokens: list[str]
-    rewards: list[float]
-
-    # Could have things like the following:
-    #   rewards: list[dict[str, float]]
-    #   reward_formula: str
-    #   total_rewards: list[float]
-    # but those are outside the scope of this container.
-
-
-class RewardsResponse(BaseModel):
-    model_version: tuple[str, int]  # uuid of run + version has seen this example
+    return await get_queuer().get_completions(request)
 
 
 @app.post("/rewards")
-def rewards(
+async def rewards(
     request: RewardsRequest, api_key_check: bool = fastapi.Depends(verify_api_key)
-) -> dict[str, t.Any]:
-    # Mock implementation - replace with real rewards logic
-    return {"stats": {}}
+) -> RewardsResponse:
+
+    return await get_queuer().rewards(request)

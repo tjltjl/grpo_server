@@ -18,10 +18,12 @@ from typeguard import typechecked
 import typing as t
 
 import grpo_server.grpo_trainer_reversed
-from grpo_server import grpo_queuer
+from grpo_server import data, grpo_queuer
 from grpo_server.testing import simple_linear_lm
 
 logger = logging.getLogger(__name__)
+logdebug = logger.critical
+
 
 # This is the config that is saved to test_data/simple_linear_40_5/config.json
 # to allow getting that model with from_pretrained.
@@ -127,24 +129,25 @@ class SimpleProblem:
     def reward_adapter(self, prompts: list[str], completions: list[str]) -> list[float]:
         return [
             self.calculate_rewards(
-                grpo_queuer.CompletionDict(
+                data.CompletionsResponse(
                     prompt=prompt,
                     completions=[completion],
-                    extra={},
+                    completion_tokens=[[0]],
+                    model_version=("", 0),
                 )
-            )["rewards"][0]
+            ).rewards[0]
             for prompt, completion in zip(prompts, completions, strict=True)
         ]
 
     @typechecked
     def calculate_rewards(
-        self, completion_dict: grpo_queuer.CompletionDict
-    ) -> grpo_queuer.RewardDict:
+        self, completions_response: data.CompletionsResponse
+    ) -> data.RewardsRequest:
         """Calculate rewards for a completion.
         Reward: just keep repeating the last token.
         """
-        prompt = completion_dict["prompt"]
-        completions = completion_dict["completions"]
+        prompt = completions_response.prompt
+        completions = completions_response.completions
 
         rewards = []
         for completion in completions:
@@ -157,11 +160,11 @@ class SimpleProblem:
 
         print("REWARDS", rewards)
 
-        return grpo_queuer.RewardDict(
+        return data.RewardsRequest(
             prompt=prompt,
             completions=completions,
             rewards=rewards,
-            extra=completion_dict.get("extra", {}),
+            completion_tokens=completions_response.completion_tokens,
         )
 
     def has_learned(self, model):
@@ -180,23 +183,24 @@ class SimpleProblem:
             print("TP", prompt, completion)
 
             reward_dict = self.calculate_rewards(
-                grpo_queuer.CompletionDict(
+                data.CompletionsResponse(
                     prompt=prompt,
                     completions=[completion],
-                    extra={},
+                    completion_tokens=[],
+                    model_version=("", 0),
                 )
             )
-            ok = ok and reward_dict["rewards"][0] > 0.5
+            ok = ok and reward_dict.rewards[0] > 0.5
         return ok
 
     async def run_loop_async(
         self,
         get_completions: t.Callable[
-            [grpo_queuer.PromptDict],
-            t.Coroutine[t.Any, t.Any, grpo_queuer.CompletionDict],
+            [data.CompletionsRequest],
+            t.Coroutine[t.Any, t.Any, data.CompletionsResponse],
         ],
         set_rewards: t.Callable[
-            [grpo_queuer.RewardDict], t.Coroutine[t.Any, t.Any, t.Any]
+            [data.RewardsRequest], t.Coroutine[t.Any, t.Any, t.Any]
         ],
     ):
         """Run an async loop training given the ops to use.
@@ -208,12 +212,12 @@ class SimpleProblem:
             while True:
                 for row in self.dataset:
                     prompt: str = row["prompt"]  # type: ignore
-                    logger.debug("call get completions %s", prompt)
+                    logdebug("call get completions %s", prompt)
                     completions = await get_completions(
-                        grpo_queuer.PromptDict(prompt=prompt)
+                        data.CompletionsRequest(prompt=prompt)
                     )
-                    logger.debug("got completions %s", completions)
+                    logdebug("got completions %s", completions)
                     rewards_dict = self.calculate_rewards(completions)
 
-                    logger.debug("setting rewards: %s", rewards_dict)
+                    logdebug("setting rewards: %s", rewards_dict)
                     tg.create_task(set_rewards(rewards_dict))

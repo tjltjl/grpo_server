@@ -17,7 +17,8 @@ Basic architecture:
   language model to run tests using. Included in main body
   to allow access e.g. from jupyterlab
 
-* `test_data` contains data used in the test, e.g., smolm135 tokenizer
+* `test_data` contains data used in the test, e.g., smolm135 tokenizer (incorporated
+  in the simple linear model too)
 
 Details:
 

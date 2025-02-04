@@ -11,10 +11,12 @@ import janus
 import logging
 import pydantic_settings
 import queue
+import traceback
 import transformers
 import trl.trainer.grpo_trainer
 from typeguard import typechecked
 import typing as t
+from grpo_server import data
 
 logger = logging.getLogger(__name__)
 # pytest doesn't flush logger.debug()..
@@ -35,24 +37,7 @@ class TrainingSettings(pydantic_settings.BaseSettings):
     logging_steps: int = 1
 
 
-class PromptDict(t.TypedDict):
-    prompt: str
-
-
-class CompletionDict(t.TypedDict):
-    prompt: str
-    completions: list[str]
-    extra: t.Any
-
-
-class RewardDict(t.TypedDict):
-    prompt: str
-    completions: list[str]
-    rewards: list[float]
-    extra: t.Any
-
-
-class DatasetBackend(ABC):
+class BaseQueuer(ABC):
     """The main training interface that the outside world connects to.
 
     The core interface of grpo_server.
@@ -64,11 +49,15 @@ class DatasetBackend(ABC):
     """
 
     @abstractmethod
-    async def get_completions(self, prompt: PromptDict) -> CompletionDict:
+    async def get_completions(
+        self, completions_request: data.CompletionsRequest
+    ) -> data.CompletionsResponse:
         pass
 
     @abstractmethod
-    async def rewards(self, rewards: list[RewardDict]) -> str:
+    async def rewards(
+        self, rewards_request: data.RewardsRequest
+    ) -> data.RewardsResponse:
         pass
 
 
@@ -141,7 +130,12 @@ class ActionItem(asyncio.Event):
         return return_value
 
 
-class GRPOQueuer(DatasetBackend):
+class GRPOQueuer(BaseQueuer):
+    """The main querier class.
+
+    As a context manager, starts a training thread and stops it.
+    """
+
     queue: janus.Queue[ActionItem]
     async_queue: t.Any
     sync_queue: t.Any
@@ -158,6 +152,28 @@ class GRPOQueuer(DatasetBackend):
     # Avoid loops
     def set_trainer(self, trainer):
         self.trainer = trainer
+
+    async def __aenter__(self):
+
+        def loop():
+            try:
+                logdebug("START TRAINING LOOP")
+                self.trainer.train()
+            except:
+                traceback.print_exc()
+                raise
+
+        self.loop_task = asyncio.create_task(asyncio.to_thread(loop))
+
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+
+        def action() -> None:
+            raise Exception("END")
+
+        await self.async_queue.put(ActionItem(action))
+        await asyncio.wait([self.loop_task])
 
     def data_getter(self):
         queue = self.sync_queue
@@ -176,21 +192,31 @@ class GRPOQueuer(DatasetBackend):
             #    yield item
 
     @typechecked
-    async def get_completions(self, prompt: PromptDict) -> CompletionDict:
+    async def get_completions(
+        self, completions_request: data.CompletionsRequest
+    ) -> data.CompletionsResponse:
         assert self.trainer
 
-        logdebug("get_completions: start %s", prompt)
+        logdebug("get_completions: start %s", completions_request)
 
         # This is run inside data_getter
         @typechecked
-        def action() -> tuple[CompletionDict, None]:
+        def action() -> tuple[data.CompletionsResponse, None]:
             completions = self.trainer.generate_completions(
                 self.trainer.model,
-                [prompt],
+                [dict(prompt=completions_request.prompt)],
             )
             assert len(completions) == 1
             logdebug("get_completions: gen returned %s", completions[0])
-            return completions[0], None
+            return (
+                data.CompletionsResponse(
+                    prompt=completions_request.prompt,
+                    completions=completions[0]["completions"],
+                    completion_tokens=completions[0]["extra"]["prompt_completion_ids"],
+                    model_version=("", 0),  # TODO
+                ),
+                None,
+            )
 
         item = ActionItem(action)
         await self.async_queue.put(item)
@@ -198,20 +224,26 @@ class GRPOQueuer(DatasetBackend):
         await item.event.wait()
         logdebug("get_completions: done %s", item.result)
 
-        # Ensure response matches CompletionDict structure
+        # Ensure response matches CompletionsResponse structure
         return item.result
 
-    async def rewards(self, rewards: list[RewardDict]) -> str:
-        logdebug("rewards: start %s", rewards)
+    async def rewards(
+        self, rewards_request: data.RewardsRequest
+    ) -> data.RewardsResponse:
+        logdebug("rewards: start %s", rewards_request)
         queue = self.async_queue
 
         # Pipe rewards straight to learning
         #
         def action():
             # It's a reward; return this data with the labels
-            dataset_row = rewards
+            dataset_row = dict(
+                prompt=rewards_request.prompt,
+                rewards=rewards_request.rewards,
+                extra=dict(prompt_completion_ids=rewards_request.completion_tokens),
+            )
             logdebug("data_getter returning %s", dataset_row)
-            return "DONE", dataset_row
+            return data.RewardsResponse(model_version=("", 0)), dataset_row
 
         item = ActionItem(action)
         await self.async_queue.put(item)

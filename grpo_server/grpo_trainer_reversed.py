@@ -186,7 +186,11 @@ class GRPOTrainerSplit(trl.trainer.GRPOTrainer):
             [example["extra"]["prompt_completion_ids"] for example in inputs],
         )
         prompt_completion_ids = torch.cat(
-            [example["extra"]["prompt_completion_ids"] for example in inputs], axis=0
+            [
+                torch.as_tensor(example["extra"]["prompt_completion_ids"])
+                for example in inputs
+            ],
+            axis=0,
         )
         rewards = torch.cat(
             [torch.as_tensor(example["rewards"]) for example in inputs], axis=0
