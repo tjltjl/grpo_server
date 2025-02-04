@@ -4,8 +4,10 @@ Including a really small language model (linear),
 parameterizations to use it and a reward function.
 """
 
+import asyncio
 import dataclasses
 import datasets
+import logging
 import numpy as np
 from transformers import PreTrainedModel, PretrainedConfig, GenerationMixin
 import transformers.utils.generic
@@ -13,10 +15,13 @@ import trl
 import torch
 import torch.nn as nn
 from typeguard import typechecked
+import typing as t
 
 import grpo_server.grpo_trainer_reversed
 from grpo_server import grpo_queuer
 from grpo_server.testing import simple_linear_lm
+
+logger = logging.getLogger(__name__)
 
 # This is the config that is saved to test_data/simple_linear_40_5/config.json
 # to allow getting that model with from_pretrained.
@@ -93,7 +98,7 @@ class SimpleProblem:
 
         trainer_params = dict(
             model=model,
-            reward_funcs=[self.calculate_rewards],
+            reward_funcs=[self.reward_adapter],
             args=self.grpo_config,
             train_dataset=self.dataset,
             # peft_config=peft.LoraConfig(task_type="CAUSAL_LM"),
@@ -119,25 +124,45 @@ class SimpleProblem:
         return model, trainer, queuer
 
     @typechecked
+    def reward_adapter(self, prompts: list[str], completions: list[str]) -> list[float]:
+        return [
+            self.calculate_rewards(
+                grpo_queuer.CompletionDict(
+                    prompt=prompt,
+                    completions=[completion],
+                    extra={},
+                )
+            )["rewards"][0]
+            for prompt, completion in zip(prompts, completions, strict=True)
+        ]
+
+    @typechecked
     def calculate_rewards(
-        self, prompts: list[str], completions: list[str], **kwargs
-    ) -> list[float]:
-        """Reward: just keep repeating the last token."""
-        # print(prompts, completions, kwargs)
-        res = []
-        for i, (p, c) in enumerate(zip(prompts, completions)):
+        self, completion_dict: grpo_queuer.CompletionDict
+    ) -> grpo_queuer.RewardDict:
+        """Calculate rewards for a completion.
+        Reward: just keep repeating the last token.
+        """
+        prompt = completion_dict["prompt"]
+        completions = completion_dict["completions"]
+
+        rewards = []
+        for completion in completions:
             ids = (
-                self.outside_tokenizer(p).input_ids
-                + self.outside_tokenizer(c).input_ids
+                self.outside_tokenizer(prompt).input_ids
+                + self.outside_tokenizer(completion).input_ids
             )
-            # print(ids)
             d = (np.diff(ids) == 0) + 0.0
-            # print(d)
-            res.append(float(np.mean(d)))
-            # if i == 0:
-            #    print(p, c, ids, res[-1])  # d,
-        print("REWARDS", res)
-        return res
+            rewards.append(float(np.mean(d)))
+
+        print("REWARDS", rewards)
+
+        return grpo_queuer.RewardDict(
+            prompt=prompt,
+            completions=completions,
+            rewards=rewards,
+            extra=completion_dict.get("extra", {}),
+        )
 
     def has_learned(self, model):
         ok = True
@@ -153,5 +178,42 @@ class SimpleProblem:
                 output_tokens[0, len(input_tokens.input_ids) :]
             )
             print("TP", prompt, completion)
-            ok = ok and sum(self.calculate_rewards([prompt], [completion])) > 0.5
+
+            reward_dict = self.calculate_rewards(
+                grpo_queuer.CompletionDict(
+                    prompt=prompt,
+                    completions=[completion],
+                    extra={},
+                )
+            )
+            ok = ok and reward_dict["rewards"][0] > 0.5
         return ok
+
+    async def run_loop_async(
+        self,
+        get_completions: t.Callable[
+            [grpo_queuer.PromptDict],
+            t.Coroutine[t.Any, t.Any, grpo_queuer.CompletionDict],
+        ],
+        set_rewards: t.Callable[
+            [grpo_queuer.RewardDict], t.Coroutine[t.Any, t.Any, t.Any]
+        ],
+    ):
+        """Run an async loop training given the ops to use.
+
+        Used to test both grpo_service and grpo_queuer
+        """
+
+        async with asyncio.TaskGroup() as tg:
+            while True:
+                for row in self.dataset:
+                    prompt: str = row["prompt"]  # type: ignore
+                    logger.debug("call get completions %s", prompt)
+                    completions = await get_completions(
+                        grpo_queuer.PromptDict(prompt=prompt)
+                    )
+                    logger.debug("got completions %s", completions)
+                    rewards_dict = self.calculate_rewards(completions)
+
+                    logger.debug("setting rewards: %s", rewards_dict)
+                    tg.create_task(set_rewards(rewards_dict))

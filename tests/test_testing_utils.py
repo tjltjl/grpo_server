@@ -16,8 +16,23 @@ def simple_problem():
 
 def test_rewards(simple_problem):
     """Test the calculate_rewards function in simple_problem"""
-    assert simple_problem.calculate_rewards(["3434"], ["343434"]) == [0]
-    assert simple_problem.calculate_rewards(["3434"], ["444444"]) == [2.0 / 3.0]
+    completion1 = {"prompt": "3434", "completions": ["343434"], "extra": {}}
+    expected1 = {
+        "prompt": "3434",
+        "completions": ["343434"],
+        "rewards": [0],
+        "extra": {},
+    }
+    assert simple_problem.calculate_rewards(completion1) == expected1
+
+    completion2 = {"prompt": "3434", "completions": ["444444"], "extra": {}}
+    expected2 = {
+        "prompt": "3434",
+        "completions": ["444444"],
+        "rewards": [2.0 / 3.0],
+        "extra": {},
+    }
+    assert simple_problem.calculate_rewards(completion2) == expected2
 
 
 def test_learns_offline(simple_problem, tmp_path):
@@ -49,41 +64,15 @@ def test_learns_queuer(simple_problem, tmp_path):
 
         async def run_loop():
             nonlocal complete
+            task = asyncio.create_task(
+                simple_problem.run_loop_async(
+                    queuer.get_completions,
+                    queuer.rewards,
+                )
+            )
             while not complete:
-                with lock:
-                    for task in tasks:
-                        if task.done():
-                            print("TASK RESULT", task.result())
-
-                for row in simple_problem.dataset:
-                    prompt = row["prompt"]
-                    logger.debug("call get completions %s", prompt)
-                    completions = await queuer.get_completions(dict(prompt=prompt))
-                    logger.debug("got completions %s", completions)
-                    rewards = simple_problem.calculate_rewards(
-                        [completions["prompt"]] * len(completions["completions"]),
-                        completions["completions"],
-                    )
-
-                    async def reward_setter(prompt, completions, rewards):
-                        logger.debug(
-                            "setting rewards: %s %s %s", prompt, completions, rewards
-                        )
-                        await queuer.rewards(
-                            dict(
-                                prompt=completions["prompt"],
-                                completions=completions["completions"],
-                                rewards=rewards,
-                                extra=completions["extra"],
-                            ),
-                        )
-
-                    task = asyncio.create_task(
-                        reward_setter(prompt, completions, rewards)
-                    )
-                    with lock:
-                        tasks.append(task)
-                    # await asyncio.sleep(0.01)
+                await asyncio.sleep(0.1)
+            task.cancel()
             logger.debug("loop_thread exiting")
 
         import asyncio

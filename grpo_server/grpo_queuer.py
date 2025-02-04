@@ -17,7 +17,6 @@ from typeguard import typechecked
 import typing as t
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 # pytest doesn't flush logger.debug()..
 logdebug = logger.info
 
@@ -49,7 +48,7 @@ class CompletionDict(t.TypedDict):
 class RewardDict(t.TypedDict):
     prompt: str
     completions: list[str]
-    rewards: list[str]
+    rewards: list[float]
     extra: t.Any
 
 

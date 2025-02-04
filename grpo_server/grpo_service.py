@@ -52,12 +52,14 @@ app = fastapi.FastAPI(lifespan=lifespan)
 
 
 class CompletionsRequest(BaseModel):
-    prompts: list[str]
+    prompt: str
 
 
 class CompletionsResponse(BaseModel):
-    prompts: list[str]
-    completions: list[list[str]]
+    prompt: str
+    completions: list[str]
+    completion_tokens: list[list[int]]  # Needed to ensure we respond correctly.
+    model_version: tuple[str, int]  # uuid of run + number of changes
 
 
 @app.post("/completions", response_model=CompletionsResponse)
@@ -65,14 +67,27 @@ def completions(
     request: CompletionsRequest, api_key_check: bool = fastapi.Depends(verify_api_key)
 ) -> CompletionsResponse:
     # Mock implementation - replace with real completion logic
-    completions = [[p + "_completion"] for p in request.prompts]
-    return CompletionsResponse(prompts=request.prompts, completions=completions)
+    completions = [request.prompt + "_completion"] * 2
+    return CompletionsResponse(
+        prompt=request.prompt, completions=completions, completion_tokens=[[]]
+    )
 
 
 class RewardsRequest(BaseModel):
-    prompts: list[str]
-    completions: list[list[str]]
-    rewards: list[list[float]]
+    prompt: str
+    completions: list[str]
+    completion_tokens: list[str]
+    rewards: list[float]
+
+    # Could have things like the following:
+    #   rewards: list[dict[str, float]]
+    #   reward_formula: str
+    #   total_rewards: list[float]
+    # but those are outside the scope of this container.
+
+
+class RewardsResponse(BaseModel):
+    model_version: tuple[str, int]  # uuid of run + version has seen this example
 
 
 @app.post("/rewards")

@@ -7,7 +7,7 @@ Basic architecture:
 * `grpo_server.grpo_service` provides a fastapi interface to get
   completions from and return rewards to.
 
-* `grpo_server.grpo_dataset` provides a control-flow-reversed hacky
+* `grpo_server.grpo_queuer` provides a control-flow-reversed hacky
   dataset, goes between service and trainer (TODO: a proper implementation)
 
 * `grpo_server.grpo_trainer` provides a control-flow-reversed hacky
@@ -18,3 +18,10 @@ Basic architecture:
   to allow access e.g. from jupyterlab
 
 * `test_data` contains data used in the test, e.g., smolm135 tokenizer
+
+Details:
+
+* Sequencing: we give out tuple[str, int] (uuid of run id + gradient cycle)
+  when completing and when having used results.
+
+    * TODO: more control over when to include given input, now it's async (but queued)
