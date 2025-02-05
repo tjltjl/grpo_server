@@ -160,8 +160,10 @@ class GRPOQueuer(BaseQueuer):
                 logdebug("START TRAINING LOOP")
                 self.trainer.train()
             except:
+                logdebug("TRAINING LOOP EXCEPTION")
                 traceback.print_exc()
                 raise
+            logdebug("TRAINING LOOP EXIT")
 
         self.loop_task = asyncio.create_task(asyncio.to_thread(loop))
 
@@ -169,11 +171,17 @@ class GRPOQueuer(BaseQueuer):
 
     async def __aexit__(self, exc_type, exc, tb):
 
+        logdebug("AExit")
+
         def action() -> None:
+            logdebug("AExit action")
             raise Exception("END")
 
         await self.async_queue.put(ActionItem(action))
         await asyncio.wait([self.loop_task])
+
+    def is_alive(self):
+        return not self.loop_task.done()
 
     def data_getter(self):
         queue = self.sync_queue
