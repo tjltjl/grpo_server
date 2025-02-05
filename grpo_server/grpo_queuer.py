@@ -5,12 +5,12 @@ that implements the control loop reversal.
 
 from abc import ABC, abstractmethod
 import asyncio
+from contextlib import asynccontextmanager
 import datasets
 import dill
-import janus
 import logging
 import pydantic_settings
-import queue
+from queue import Queue
 import traceback
 import transformers
 import trl.trainer.grpo_trainer
@@ -35,6 +35,7 @@ class TrainingSettings(pydantic_settings.BaseSettings):
     learning_rate: float = 5e-2
     gradient_accumulation_steps: int = 1
     logging_steps: int = 1
+    max_steps: int = 201
 
 
 class BaseQueuer(ABC):
@@ -79,7 +80,7 @@ def create_queuer(training_settings: TrainingSettings, output_dir: str):
         save_steps=50,
         weight_decay=0.001,
         num_train_epochs=1,
-        max_steps=200,
+        max_steps=training_settings.max_steps,
         use_cpu=True,  # cpu
         save_strategy="no",  # Don't save (pickling queuer is no good)'
         # Otherwise, we get an error from accelerate dataset batching strs
@@ -119,85 +120,112 @@ class ActionItem(asyncio.Event):
         self.callable = callable
         self.event_loop = asyncio.get_running_loop()
         self.event = asyncio.Event()
+        self.error = None
+
+    async def _set_event(self):
+        self.event.set()
+
+    def return_error(self, error):
+        self.error = error
+        asyncio.run_coroutine_threadsafe(self._set_event(), self.event_loop)
 
     def run(self):
+        "Called in the training thread"
         self.result, return_value = self.callable()
 
-        async def set_event():
-            self.event.set()
-
-        asyncio.run_coroutine_threadsafe(set_event(), self.event_loop)
+        asyncio.run_coroutine_threadsafe(self._set_event(), self.event_loop)
         return return_value
+
+    def raise_from_error(self):
+        "Called in the server thread to raise exception"
+        if self.error:
+            logdebug("RAISING FROM ERROR TO SOURCE")
+            raise Exception(self.error)
+
+
+class StopTrainingException(Exception):
+    pass
 
 
 class GRPOQueuer(BaseQueuer):
     """The main querier class.
 
     As a context manager, starts a training thread and stops it.
+    ```
+       async with queuer.context():
+           ...
+    ```
     """
 
-    queue: janus.Queue[ActionItem]
-    async_queue: t.Any
-    sync_queue: t.Any
-
+    queue: Queue[ActionItem]
     model: t.Any
     trainer: t.Any
 
     def __init__(self, model):
-        self.queue = janus.Queue()
+        self.queue = Queue()
         self.model = model
-        self.async_queue = self.queue.async_q
-        self.sync_queue = self.queue.sync_q
+        self.exited = False
 
     # Avoid loops
     def set_trainer(self, trainer):
         self.trainer = trainer
 
-    async def __aenter__(self):
+    @asynccontextmanager
+    async def context(self):
 
         def loop():
             try:
                 logdebug("START TRAINING LOOP")
                 self.trainer.train()
+            except StopTrainingException:
+                logdebug("TRAINING LOOP AEXIT")
             except:
                 logdebug("TRAINING LOOP EXCEPTION")
                 traceback.print_exc()
                 raise
             logdebug("TRAINING LOOP EXIT")
+            self.exited = True
+            # Flush queue
+            while True:
+                try:
+                    logdebug("flushing queue...")
+                    entry = self.queue.get(timeout=0.1)
+                except:
+                    logdebug("queue empty")
+                    return
+                logdebug("Setting return_error %s", entry)
+                entry.return_error("Training loop exited")
 
-        self.loop_task = asyncio.create_task(asyncio.to_thread(loop))
+        async with asyncio.TaskGroup() as tg:
+            self.loop_task = tg.create_task(asyncio.to_thread(loop))
 
-        return self
+            yield
 
-    async def __aexit__(self, exc_type, exc, tb):
+            logdebug("AExit")
 
-        logdebug("AExit")
+            def action() -> None:
+                logdebug("AExit action")
+                raise StopTrainingException("END")
 
-        def action() -> None:
-            logdebug("AExit action")
-            raise Exception("END")
-
-        await self.async_queue.put(ActionItem(action))
-        await asyncio.wait([self.loop_task])
+            self.queue.put_nowait(ActionItem(action))
 
     def is_alive(self):
         return not self.loop_task.done()
 
     def data_getter(self):
-        queue = self.sync_queue
+        queue = self.queue
         while True:
             # Do not wait for rewards; wait for
             logdebug("data_getter: to get")
             item = queue.get()
+            if self.exited:
+                item.return_error("Training loop exited")
+                continue
             logdebug("data_getter: got")
             retval = item.run()
             logdebug("data_getter: run complete: %s", retval)
             if retval:
                 yield retval
-            # if queue.qsize() > 10:
-            #    print("DROP ON THE FLOOR", item.data)
-            # else:
-            #    yield item
 
     @typechecked
     async def get_completions(
@@ -227,10 +255,11 @@ class GRPOQueuer(BaseQueuer):
             )
 
         item = ActionItem(action)
-        await self.async_queue.put(item)
+        self.queue.put_nowait(item)
         logdebug("get_completions: to wait")
         await item.event.wait()
-        logdebug("get_completions: done %s", item.result)
+        logdebug("get_completions: done %s %s", item.error, item.result)
+        item.raise_from_error()
 
         # Ensure response matches CompletionsResponse structure
         return item.result
@@ -239,7 +268,6 @@ class GRPOQueuer(BaseQueuer):
         self, rewards_request: data.RewardsRequest
     ) -> data.RewardsResponse:
         logdebug("rewards: start %s", rewards_request)
-        queue = self.async_queue
 
         # Pipe rewards straight to learning
         #
@@ -254,10 +282,11 @@ class GRPOQueuer(BaseQueuer):
             return data.RewardsResponse(model_version=("", 0)), dataset_row
 
         item = ActionItem(action)
-        await self.async_queue.put(item)
+        self.queue.put_nowait(item)
         logdebug("rewards: to wait")
         await item.event.wait()
-        logdebug("rewards: done %s", item.result)
+        logdebug("rewards: done %s %s", item.error, item.result)
+        item.raise_from_error()
         return item.result
 
     def __getstate__(self):
@@ -271,7 +300,7 @@ class GRPOQueuer(BaseQueuer):
 
     def __setstate__(self, input_dict):
         self.__dict__.update(input_dict)
-        self.queue = janus.Queue()
+        self.queue = Queue()
         self.model = None
         self.trainer = None
 

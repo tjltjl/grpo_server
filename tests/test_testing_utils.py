@@ -4,6 +4,7 @@ import asyncio
 import fastapi.testclient
 import logging
 import numpy as np
+from numpy.random import wald
 import pytest
 import threading
 from typeguard import typechecked
@@ -22,22 +23,29 @@ def simple_problem():
 
 def test_rewards(simple_problem):
     """Test the calculate_rewards function in simple_problem"""
-    completion1 = {"prompt": "3434", "completions": ["343434"], "extra": {}}
-    expected1 = {
-        "prompt": "3434",
-        "completions": ["343434"],
-        "rewards": [0],
-        "extra": {},
-    }
+    completion1 = data.CompletionsResponse(
+        prompt="3434",
+        completions=["343434"],
+        completion_tokens=[[0]],
+        model_version=("", 0),
+    )
+    expected1 = data.RewardsRequest(
+        prompt="3434", completions=["343434"], completion_tokens=[[0]], rewards=[0]
+    )
     assert simple_problem.calculate_rewards(completion1) == expected1
 
-    completion2 = {"prompt": "3434", "completions": ["444444"], "extra": {}}
-    expected2 = {
-        "prompt": "3434",
-        "completions": ["444444"],
-        "rewards": [2.0 / 3.0],
-        "extra": {},
-    }
+    completion2 = data.CompletionsResponse(
+        prompt="3434",
+        completions=["444444"],
+        completion_tokens=[[0]],
+        model_version=("", 0),
+    )
+    expected2 = data.RewardsRequest(
+        prompt="3434",
+        completions=["444444"],
+        completion_tokens=[[0]],
+        rewards=[2.0 / 3.0],
+    )
     assert simple_problem.calculate_rewards(completion2) == expected2
 
 
@@ -112,6 +120,14 @@ def service_url():
     return "http://testserver"
 
 
+@pytest.mark.timeout(5)
+def test_cleanup(client, service_url):
+
+    client.post(f"{service_url}/foo")
+    with pytest.raises(Exception):
+        result.raise_for_status()
+
+
 @pytest.mark.timeout(12)
 def test_learns_service(simple_problem, tmp_path, client, service_url):
     """Test that learning happens when run through the FastAPI service."""
@@ -154,24 +170,25 @@ def test_learns_service(simple_problem, tmp_path, client, service_url):
 
         async def run_loop():
             nonlocal complete
-            task = asyncio.create_task(
-                simple_problem.run_loop_async(
-                    get_completions,
-                    set_rewards,
+            async with asyncio.TaskGroup() as tg:
+                task = tg.create_task(
+                    simple_problem.run_loop_async(
+                        get_completions,
+                        set_rewards,
+                    )
                 )
-            )
-            while not complete:
-                await asyncio.sleep(0.1)
-                if task.done():
+                while not complete:
+                    await asyncio.sleep(0.1)
+                    if task.done():
+                        await asyncio.wait([task])
+                        logger.debug("loop_thread OUT PREMATURELY")
+                        return
+                task.cancel()
+                try:
                     await asyncio.wait([task])
-                    logger.debug("loop_thread OUT PREMATURELY")
-                    return
-            task.cancel()
-            try:
-                await asyncio.wait([task])
-            except Exception as e:
-                print("Forced exit", e)
-            logger.debug("loop_thread exiting")
+                except Exception as e:
+                    print("Forced exit", e)
+                logger.debug("loop_thread exiting")
 
         asyncio.run(run_loop())
 
@@ -198,8 +215,10 @@ def test_learns_service(simple_problem, tmp_path, client, service_url):
     # Check that we didn't initially know what to do
     # and in the end did'
     assert len(rewards) > 50
-    assert np.all(np.array(rewards)[0:10] < 0.5)
-    assert np.all(np.array(rewards)[-10:] > 0.5)
+    rewards = np.array(rewards)
+    logger.debug("Rewards: %s %s", rewards[:10], rewards[-10:])
+    assert np.all(rewards[0:10] < 0.5)
+    assert np.all(rewards[-10:] > 0.5)
 
 
 # @pytest.mark.timeout(12)

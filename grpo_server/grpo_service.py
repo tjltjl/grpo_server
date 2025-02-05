@@ -45,10 +45,8 @@ def verify_api_key(
 async def lifespan(app: fastapi.FastAPI):
     settings = get_settings()
 
-    async with grpo_queuer.create_queuer(
-        settings.training, settings.output_dir
-    ) as queuer:
-        app.state.queuer = queuer
+    app.state.queuer = grpo_queuer.create_queuer(settings.training, settings.output_dir)
+    async with app.state.queuer.context():
         print("APP STATE QUEUER", app.state.queuer)
 
         yield
