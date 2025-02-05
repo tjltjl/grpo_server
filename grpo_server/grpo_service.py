@@ -31,7 +31,7 @@ def get_settings():
 class Settings(pydantic_settings.BaseSettings):
     api_key: str
     output_dir: str
-    training: grpo_queuer.TrainingSettings = grpo_queuer.TrainingSettings()
+    training: TrainingSettings = TrainingSettings()
 
 
 def verify_api_key(
@@ -60,7 +60,7 @@ def get_queuer() -> grpo_queuer.BaseQueuer:
     return app.state.queuer
 
 
-app = fastapi.FastAPI(lifespan=lifespan)
+app = fastapi.FastAPI(lifespan=lifespan, dependencies=[fastapi.Depends(verify_api_key)])
 
 
 @app.exception_handler(grpo_queuer.StopTrainingException)
@@ -71,26 +71,32 @@ def stop_exception_handler(request: fastapi.Request, exc: fastapi.HTTPException)
     )  # use the exc object's message attribute
 
 
+# The heaviest-used training calls
+
+
 @app.post("/completions", response_model=CompletionsResponse)
-async def completions(
-    request: CompletionsRequest, api_key_check: bool = fastapi.Depends(verify_api_key)
-) -> CompletionsResponse:
+async def completions(request: CompletionsRequest) -> CompletionsResponse:
     return await get_queuer().get_completions(request)
 
 
 @app.post("/rewards")
-async def rewards(
-    request: RewardsRequest, api_key_check: bool = fastapi.Depends(verify_api_key)
-) -> RewardsResponse:
+async def rewards(request: RewardsRequest) -> RewardsResponse:
 
     return await get_queuer().rewards(request)
+
+
+# Bookkeeping
+
+
+@app.get("/training_settings")
+def training_settings() -> TrainingSettings:
+    return get_settings().training
 
 
 # TODO snapshots etc etc
 @app.post("/model")
 async def model(
     request: ModelRequest,
-    api_key_check: bool = fastapi.Depends(verify_api_key),
     settings=fastapi.Depends(get_settings),
 ) -> fastapi.responses.FileResponse:
     # TODO: Puts things in a weird location, doesn't delete

@@ -27,17 +27,7 @@ logdebug = logger.info
 from grpo_server import grpo_trainer_reversed
 
 
-class TrainingSettings(pydantic_settings.BaseSettings):
-    # Model to start from
-    model_id: str = "./test_data/simple_linear_40_5"
-    max_completion_length: int = 6
-    num_completions_per_prompt: int = 3
-
-    training_batch_size: int = 1  # Larger needs debugging (padding)
-    learning_rate: float = 5e-2
-    gradient_accumulation_steps: int = 1
-    logging_steps: int = 1
-    max_steps: int = 201
+from grpo_server.data import TrainingSettings
 
 
 class BaseQueuer(ABC):
@@ -128,7 +118,7 @@ class ActionItem(asyncio.Event):
         self.event_loop = asyncio.get_running_loop()
         self.event = asyncio.Event()
         self.error_class = None
-        self.error = None
+        self.error: None | type = None
         self.result = None
 
     async def _set_event(self):
@@ -149,7 +139,8 @@ class ActionItem(asyncio.Event):
     def raise_from_error(self):
         "Called in the server thread to raise exception"
         if self.error:
-            logdebug("RAISING FROM ERROR TO SOURCE")
+            logdebug("RAISING FROM ERROR TO SOURCE %s %s", self.error_class, self.error)
+            assert self.error_class
             raise self.error_class(self.error)
 
 

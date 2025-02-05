@@ -29,6 +29,19 @@ class RewardsResponse(BaseModel):
     model_version: tuple[str, int]  # uuid of run + version has seen this example
 
 
+class TrainingSettings(BaseModel):
+    # Model to start from
+    model_id: str = "./test_data/simple_linear_40_5"
+    max_completion_length: int = 6
+    num_completions_per_prompt: int = 3
+
+    training_batch_size: int = 1  # Larger needs debugging (padding)
+    learning_rate: float = 5e-2
+    gradient_accumulation_steps: int = 1
+    logging_steps: int = 1
+    max_steps: int = 201
+
+
 class ModelRequest(BaseModel):
     pass
     # model_version: tuple[str, int] TODO

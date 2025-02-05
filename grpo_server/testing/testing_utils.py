@@ -19,6 +19,7 @@ import typing as t
 
 import grpo_server.grpo_trainer_reversed
 from grpo_server import data, grpo_queuer
+from grpo_server.data import TrainingSettings
 from grpo_server.testing import simple_linear_lm
 
 logger = logging.getLogger(__name__)
@@ -115,7 +116,7 @@ class SimpleProblem:
         """Create model and trainer + queuer to reverse the control flow"""
 
         # The defaults are the test values...
-        training_settings = grpo_queuer.TrainingSettings()
+        training_settings = TrainingSettings()
 
         queuer: grpo_queuer.GRPOQueuer = grpo_queuer.create_queuer(
             training_settings, output_dir=output_dir
