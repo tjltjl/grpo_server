@@ -26,3 +26,12 @@ Details:
   when completing and when having used results.
 
     * TODO: more control over when to include given input, now it's async (but queued)
+
+Biggest TODOs:
+
+* batches
+* example task containers
+* how to start main container with settings?
+* checkpoint model, load checkpoints
+* (continue training): either load clean model and peft it,
+  or load an already pefted model and keep training that peft.
