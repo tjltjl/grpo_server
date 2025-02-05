@@ -158,8 +158,6 @@ class SimpleProblem:
             d = (np.diff(ids) == 0) + 0.0
             rewards.append(float(np.mean(d)))
 
-        print("REWARDS", rewards)
-
         return data.RewardsRequest(
             prompt=prompt,
             completions=completions,
@@ -208,16 +206,22 @@ class SimpleProblem:
         Used to test both grpo_service and grpo_queuer
         """
 
-        async with asyncio.TaskGroup() as tg:
-            while True:
-                for row in self.dataset:
-                    prompt: str = row["prompt"]  # type: ignore
-                    logdebug("call get completions %s", prompt)
-                    completions = await get_completions(
-                        data.CompletionsRequest(prompt=prompt)
-                    )
-                    logdebug("got completions %s", completions)
-                    rewards_dict = self.calculate_rewards(completions)
+        tasks = []
+        try:
+            async with asyncio.TaskGroup() as tg:
+                while True:
+                    for row in self.dataset:
+                        prompt: str = row["prompt"]  # type: ignore
+                        logdebug("call get completions %s", prompt)
+                        completions = await get_completions(
+                            data.CompletionsRequest(prompt=prompt)
+                        )
+                        logdebug("got completions %s", completions)
+                        rewards_dict = self.calculate_rewards(completions)
 
-                    logdebug("setting rewards: %s", rewards_dict)
-                    tg.create_task(set_rewards(rewards_dict))
+                        logdebug("setting rewards: %s", rewards_dict)
+                        tasks.append(tg.create_task(set_rewards(rewards_dict)))
+            for task in tasks:
+                task.result()  # Raise exceptions here
+        except grpo_queuer.StopTrainingException as e:
+            logdebug("stop training exception caught, exiting")

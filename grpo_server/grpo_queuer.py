@@ -11,6 +11,8 @@ import dill
 import logging
 import pydantic_settings
 from queue import Queue
+import shutil
+import tempfile
 import traceback
 import transformers
 import trl.trainer.grpo_trainer
@@ -48,6 +50,11 @@ class BaseQueuer(ABC):
         prompt -> completions (answers)
         rewards -> ... (fed to training)
     """
+
+    # TODO async
+    @abstractmethod
+    def create_snapshot(self, zip_path):
+        pass
 
     @abstractmethod
     async def get_completions(
@@ -120,12 +127,15 @@ class ActionItem(asyncio.Event):
         self.callable = callable
         self.event_loop = asyncio.get_running_loop()
         self.event = asyncio.Event()
+        self.error_class = None
         self.error = None
+        self.result = None
 
     async def _set_event(self):
         self.event.set()
 
-    def return_error(self, error):
+    def return_error(self, error_class, error):
+        self.error_class = error_class
         self.error = error
         asyncio.run_coroutine_threadsafe(self._set_event(), self.event_loop)
 
@@ -140,7 +150,7 @@ class ActionItem(asyncio.Event):
         "Called in the server thread to raise exception"
         if self.error:
             logdebug("RAISING FROM ERROR TO SOURCE")
-            raise Exception(self.error)
+            raise self.error_class(self.error)
 
 
 class StopTrainingException(Exception):
@@ -194,7 +204,7 @@ class GRPOQueuer(BaseQueuer):
                     logdebug("queue empty")
                     return
                 logdebug("Setting return_error %s", entry)
-                entry.return_error("Training loop exited")
+                entry.return_error(StopTrainingException, "Training loop exited")
 
         async with asyncio.TaskGroup() as tg:
             self.loop_task = tg.create_task(asyncio.to_thread(loop))
@@ -212,14 +222,27 @@ class GRPOQueuer(BaseQueuer):
     def is_alive(self):
         return not self.loop_task.done()
 
+    def create_snapshot(self, zip_path):
+        with tempfile.TemporaryDirectory() as path:
+            self.model.save_pretrained(path)
+            assert zip_path.endswith(".zip")
+            shutil.make_archive(zip_path[:-4], "zip", path)
+
     def data_getter(self):
+        """Main control flow reversal loop.
+
+        Yields dataset rows for training.
+
+        While doing the next row, accepts completion
+        requests and runs them on the model.
+        """
         queue = self.queue
         while True:
             # Do not wait for rewards; wait for
             logdebug("data_getter: to get")
             item = queue.get()
             if self.exited:
-                item.return_error("Training loop exited")
+                item.return_error(StopTrainingException, "Training loop exited")
                 continue
             logdebug("data_getter: got")
             retval = item.run()
@@ -262,12 +285,14 @@ class GRPOQueuer(BaseQueuer):
         item.raise_from_error()
 
         # Ensure response matches CompletionsResponse structure
+        assert item.result
         return item.result
 
     async def rewards(
         self, rewards_request: data.RewardsRequest
     ) -> data.RewardsResponse:
-        logdebug("rewards: start %s", rewards_request)
+        # logdebug("rewards: start %s", rewards_request)
+        logdebug("rewards: start")
 
         # Pipe rewards straight to learning
         #
@@ -287,6 +312,7 @@ class GRPOQueuer(BaseQueuer):
         await item.event.wait()
         logdebug("rewards: done %s %s", item.error, item.result)
         item.raise_from_error()
+        assert item.result
         return item.result
 
     def __getstate__(self):

@@ -7,6 +7,7 @@ Everything that is not "get completions" and "give reward"
 happens outside this server.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 import docker.errors
 import fastapi
@@ -14,11 +15,13 @@ import functools
 from pydantic import BaseModel
 import pydantic_settings
 import typing as t
+import uuid
 
 from grpo_server import grpo_queuer
 from grpo_server.data import *
 
 
+# TODO: dep. injections doesn't go right for lifespan?
 @functools.cache
 def get_settings():
     # pyright gets confused by pydantic_settings?
@@ -60,6 +63,14 @@ def get_queuer() -> grpo_queuer.BaseQueuer:
 app = fastapi.FastAPI(lifespan=lifespan)
 
 
+@app.exception_handler(grpo_queuer.StopTrainingException)
+def stop_exception_handler(request: fastapi.Request, exc: fastapi.HTTPException):
+    return fastapi.responses.JSONResponse(
+        status_code=fastapi.status.HTTP_409_CONFLICT,
+        content={"message": "training stopped"},
+    )  # use the exc object's message attribute
+
+
 @app.post("/completions", response_model=CompletionsResponse)
 async def completions(
     request: CompletionsRequest, api_key_check: bool = fastapi.Depends(verify_api_key)
@@ -73,3 +84,20 @@ async def rewards(
 ) -> RewardsResponse:
 
     return await get_queuer().rewards(request)
+
+
+# TODO snapshots etc etc
+@app.post("/model")
+async def model(
+    request: ModelRequest,
+    api_key_check: bool = fastapi.Depends(verify_api_key),
+    settings=fastapi.Depends(get_settings),
+) -> fastapi.responses.FileResponse:
+    # TODO: Puts things in a weird location, doesn't delete
+    # TODO: Do through queuer queue
+    settings = get_settings()
+    d = settings.output_dir
+    zp = f"{d}/{uuid.uuid4()}.zip"
+    zp = "/tmp/foo.zip"
+    await asyncio.to_thread(lambda: get_queuer().create_snapshot(zp))
+    return fastapi.responses.FileResponse(zp)

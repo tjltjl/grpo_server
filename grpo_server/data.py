@@ -27,3 +27,8 @@ class RewardsRequest(BaseModel):
 
 class RewardsResponse(BaseModel):
     model_version: tuple[str, int]  # uuid of run + version has seen this example
+
+
+class ModelRequest(BaseModel):
+    pass
+    # model_version: tuple[str, int] TODO

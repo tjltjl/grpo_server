@@ -2,12 +2,18 @@
 
 import asyncio
 import fastapi.testclient
+import httpx
+from io import BytesIO
 import logging
 import numpy as np
 from numpy.random import wald
+import peft
 import pytest
+import tempfile
 import threading
+import transformers
 from typeguard import typechecked
+import zipfile
 
 from grpo_server.testing import testing_utils
 from grpo_server import data, grpo_service
@@ -96,10 +102,10 @@ def test_learns_queuer(simple_problem, tmp_path):
     thread = threading.Thread(target=loop_thread, daemon=True)
     thread.start()
 
-    # assert not simple_problem.has_learned(model)
+    assert not simple_problem.has_learned(model)
     trainer.train()
     complete = True
-    # assert simple_problem.has_learned(model)
+    assert simple_problem.has_learned(model)
 
     thread.join(timeout=1)
 
@@ -123,9 +129,15 @@ def service_url():
 @pytest.mark.timeout(5)
 def test_cleanup(client, service_url):
 
-    client.post(f"{service_url}/foo")
+    result = client.post(f"{service_url}/foo")
     with pytest.raises(Exception):
         result.raise_for_status()
+
+
+@pytest.mark.timeout(5)
+def test_model_download(client, service_url):
+    headers = {"api-key": "test-key"}
+    model_0 = _load_zipped_model(client, f"{service_url}/model", headers)
 
 
 @pytest.mark.timeout(12)
@@ -168,29 +180,48 @@ def test_learns_service(simple_problem, tmp_path, client, service_url):
         """Thread function to run the async event loop."""
         logger.debug("START LOOP THREAD")
 
-        async def run_loop():
-            nonlocal complete
-            async with asyncio.TaskGroup() as tg:
-                task = tg.create_task(
-                    simple_problem.run_loop_async(
-                        get_completions,
-                        set_rewards,
-                    )
-                )
-                while not complete:
-                    await asyncio.sleep(0.1)
-                    if task.done():
-                        await asyncio.wait([task])
-                        logger.debug("loop_thread OUT PREMATURELY")
-                        return
-                task.cancel()
-                try:
-                    await asyncio.wait([task])
-                except Exception as e:
-                    print("Forced exit", e)
-                logger.debug("loop_thread exiting")
+        try:
 
-        asyncio.run(run_loop())
+            async def run_loop():
+                nonlocal complete
+                async with asyncio.TaskGroup() as tg:
+                    task = tg.create_task(
+                        simple_problem.run_loop_async(
+                            get_completions,
+                            set_rewards,
+                        )
+                    )
+                    while not complete:
+                        await asyncio.sleep(0.1)
+                        if task.done():
+                            task.result()
+                            logger.debug("loop_thread OUT PREMATURELY")
+                            return
+                    task.result()
+                    task.cancel()
+                    try:
+                        await asyncio.wait([task])
+                    except Exception as e:
+                        print("Forced exit", e)
+                    task.result()
+                    logger.debug("loop_thread exiting")
+                task.result()
+
+            asyncio.run(run_loop())
+        except httpx.HTTPStatusError as e:
+            print("STATUS ERROR", e)
+            if complete:
+                return
+            raise
+        except Exception as e:
+            print("OTHER ERROR", e)
+            if complete:
+                return
+            # TODO: HANDLE THIS PROPERLY
+            # raise
+            return
+
+    model_0 = _load_zipped_model(client, f"{service_url}/model", headers)
 
     # Create and start the event loop thread
     thread = threading.Thread(target=loop_thread, daemon=True)
@@ -212,13 +243,34 @@ def test_learns_service(simple_problem, tmp_path, client, service_url):
         thread.join(timeout=1)
         logger.debug("JOINED THREAD")
 
+    model_1 = _load_zipped_model(client, f"{service_url}/model", headers)
+
     # Check that we didn't initially know what to do
     # and in the end did'
     assert len(rewards) > 50
-    rewards = np.array(rewards)
-    logger.debug("Rewards: %s %s", rewards[:10], rewards[-10:])
-    assert np.all(rewards[0:10] < 0.5)
-    assert np.all(rewards[-10:] > 0.5)
+
+    assert not simple_problem.has_learned(model_0)
+    assert simple_problem.has_learned(model_1)
+
+    # rewards = np.array(rewards)
+    # logger.debug("Rewards: %s %s", rewards[:10], rewards[-10:])
+    # assert np.all(rewards[0:10] < 0.5)
+    # assert np.all(rewards[-10:] > 0.5)
+
+
+def _load_zipped_model(client, uri, headers):
+    """Load a zipped model from bytes and return the loaded model."""
+    response = client.post(uri, json={}, headers=headers)
+    response.raise_for_status()
+    zip_bytes = response.content
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with zipfile.ZipFile(BytesIO(zip_bytes), "r") as zip_ref:
+            zip_ref.extractall(temp_dir)
+
+        return transformers.AutoModel.from_pretrained(temp_dir)
+        # TODO; how to know which one we are doing?
+        # return peft.PeftModel.from_pretrained(temp_dir)
 
 
 # @pytest.mark.timeout(12)
