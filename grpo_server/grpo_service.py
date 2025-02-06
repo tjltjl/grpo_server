@@ -54,10 +54,13 @@ def verify_api_key(
 async def lifespan(app: fastapi.FastAPI):
     settings = get_settings()
     logger.critical("Settings:\n%s", settings)
+    app.state.queuer = None
     yield
 
 
 def get_queuer() -> grpo_queuer.BaseQueuer:
+    if app.state.queuer is None:
+        raise fastapi.HTTPException(status_code=409, detail="Not started")
     return app.state.queuer
 
 

@@ -146,7 +146,13 @@ def test_cleanup(client, service_url):
 @pytest.mark.timeout(5)
 def test_model_download(client, service_url):
     headers = {"api-key": "test-key"}
+    result = client.post(
+        "/start", json=data.TrainingSettings().model_dump(), headers=headers
+    )
+    result.raise_for_status()
     model_0 = _load_zipped_model(client, f"{service_url}/model", headers)
+    result = client.post("/stop", headers=headers)
+    result.raise_for_status()
 
 
 @pytest.mark.timeout(12)
@@ -155,6 +161,11 @@ def test_learns_service(simple_problem, tmp_path, client, service_url):
 
     complete = False
     headers = {"api-key": "test-key"}
+
+    result = client.post(
+        "/start", json=data.TrainingSettings().model_dump(), headers=headers
+    )
+    result.raise_for_status()
 
     rewards = []
 
@@ -265,6 +276,9 @@ def test_learns_service(simple_problem, tmp_path, client, service_url):
     # logger.debug("Rewards: %s %s", rewards[:10], rewards[-10:])
     # assert np.all(rewards[0:10] < 0.5)
     # assert np.all(rewards[-10:] > 0.5)
+
+    result = client.post("/stop", headers=headers)
+    result.raise_for_status()
 
 
 def _load_zipped_model(client, uri, headers):
