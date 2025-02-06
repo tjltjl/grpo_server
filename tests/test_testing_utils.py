@@ -27,6 +27,17 @@ def simple_problem():
     return testing_utils.SimpleProblem()
 
 
+@pytest.fixture(autouse=True)
+def set_settings(monkeypatch, tmp_path):
+    # monkeypatch.setenv("API_KEY", "test-key")
+    # monkeypatch.setenv("output_dir", str(tmp_path))
+    monkeypatch.setattr(
+        grpo_service,
+        "global_settings",
+        grpo_service.Settings(api_key="test-key", output_dir=str(tmp_path)),
+    )
+
+
 def test_rewards(simple_problem):
     """Test the calculate_rewards function in simple_problem"""
     completion1 = data.CompletionsResponse(
@@ -114,8 +125,6 @@ def test_learns_queuer(simple_problem, tmp_path):
 def client(monkeypatch, tmp_path):
     """Create a test client for FastAPI."""
     # Set api key for testing
-    monkeypatch.setenv("API_KEY", "test-key")
-    monkeypatch.setenv("output_dir", str(tmp_path))
     with fastapi.testclient.TestClient(grpo_service.app) as client:
         yield client
 

@@ -12,26 +12,32 @@ from contextlib import asynccontextmanager
 import docker.errors
 import fastapi
 import functools
+import logging
 from pydantic import BaseModel
 import pydantic_settings
 import typing as t
 import uuid
 
 from grpo_server import grpo_queuer
+from grpo_server.testing import testing_utils
 from grpo_server.data import *
 
-
-# TODO: dep. injections doesn't go right for lifespan?
-@functools.cache
-def get_settings():
-    # pyright gets confused by pydantic_settings?
-    return Settings()  # type: ignore
+logger = logging.getLogger(__name__)
 
 
 class Settings(pydantic_settings.BaseSettings):
     api_key: str
     output_dir: str
-    training: TrainingSettings = TrainingSettings()
+
+
+global_settings: None | Settings = None
+
+
+# TODO: dep. injections doesn't go right for lifespan?
+@functools.cache
+def get_settings():
+    assert global_settings
+    return global_settings
 
 
 def verify_api_key(
@@ -47,13 +53,8 @@ def verify_api_key(
 @asynccontextmanager
 async def lifespan(app: fastapi.FastAPI):
     settings = get_settings()
-
-    app.state.queuer = grpo_queuer.create_queuer(settings.training, settings.output_dir)
-    async with app.state.queuer.context():
-        print("APP STATE QUEUER", app.state.queuer)
-
-        yield
-        print("OUT OF LIFESPAN")
+    logger.critical("Settings:\n%s", settings)
+    yield
 
 
 def get_queuer() -> grpo_queuer.BaseQueuer:
@@ -72,6 +73,25 @@ def stop_exception_handler(request: fastapi.Request, exc: fastapi.HTTPException)
 
 
 # The heaviest-used training calls
+
+
+@app.post("/start")
+async def start(training_settings: TrainingSettings):
+    settings = get_settings()
+    app.state.queuer = grpo_queuer.create_queuer(training_settings, settings.output_dir)
+    app.state.queuer_context = app.state.queuer.context()
+    await app.state.queuer_context.__aenter__()
+
+    return {"status": "started"}
+
+
+@app.post("/stop")
+async def stop():
+    await app.state.queuer_context.__aexit__(None, None, None)
+    app.state.queuer = None
+    app.state.queuer_context = None
+
+    return {"status": "stopped"}
 
 
 @app.post("/completions", response_model=CompletionsResponse)

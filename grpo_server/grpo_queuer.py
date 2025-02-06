@@ -72,6 +72,7 @@ def create_queuer(training_settings: TrainingSettings, output_dir: str):
         logging_steps=training_settings.logging_steps,
         gradient_accumulation_steps=training_settings.gradient_accumulation_steps,
         max_completion_length=training_settings.max_completion_length,
+        num_generations=training_settings.num_completions_per_prompt,
         eval_on_start=False,
         label_names=[],
         save_steps=50,

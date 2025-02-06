@@ -34,6 +34,12 @@ SIMPLE_MODEL_CONFIG = simple_linear_lm.SimpleLinearLMConfig(
     hidden_dim=5,
 )
 
+SIMPLE_MODEL_CONFIG_LARGE = simple_linear_lm.SimpleLinearLMConfig(
+    vocab_size=49152,
+    context_size=2,
+    hidden_dim=5,
+)
+
 
 class SimpleProblem:
     def __init__(self):

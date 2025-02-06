@@ -1,0 +1,8 @@
+services:
+  grpo:
+    build:
+      dockerfile: Dockerfile
+      context: ./
+    command: python -m grpo_server.uvicorn_main
+    ports:
+      - "3247:8000"
