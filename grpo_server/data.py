@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+import typing as t
 
 
 class CompletionsRequest(BaseModel):
@@ -16,7 +17,16 @@ class RewardsRequest(BaseModel):
     prompt: str
     completions: list[str]
     completion_tokens: list[list[int]]
-    rewards: list[float]
+    rewards: t.Sequence[float]
+
+    @classmethod
+    def from_completions(cls, completions, rewards):
+        return cls(
+            prompt=completions.prompt,
+            completions=completions.completions,
+            completion_tokens=completions.completion_tokens,
+            rewards=rewards,
+        )
 
     # Could have things like the following:
     #   rewards: list[dict[str, float]]
