@@ -15,7 +15,7 @@ import transformers
 from typeguard import typechecked
 import zipfile
 
-from grpo_server.testing import testing_utils
+from grpo_server.testing import simple_linear_lm, testing_utils
 from grpo_server import data, grpo_service
 
 logger = logging.getLogger(__name__)
