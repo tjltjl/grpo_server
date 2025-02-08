@@ -45,3 +45,9 @@ class TrainingSettings(BaseModel):
 class ModelRequest(BaseModel):
     pass
     # model_version: tuple[str, int] TODO
+
+
+class StatusResponse(BaseModel):
+    training_settings: TrainingSettings | None = None
+    completion_requests_served: int = 0
+    reward_requests_served: int = 0

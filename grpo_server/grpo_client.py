@@ -45,7 +45,7 @@ class GrpoClient:
             response.raise_for_status()
             return await response.json()
 
-    async def stop(self, settings: TrainingSettings):
+    async def stop(self):
         """Stop training."""
         async with self.session.post(f"{self.base_url}/stop") as response:
             response.raise_for_status()
@@ -72,6 +72,12 @@ class GrpoClient:
         async with self.session.get(f"{self.base_url}/training_settings") as response:
             response.raise_for_status()
             return TrainingSettings(**await response.json())
+
+    async def get_status(self) -> StatusResponse:
+        """Get current server status."""
+        async with self.session.get(f"{self.base_url}/status") as response:
+            response.raise_for_status()
+            return StatusResponse(**await response.json())
 
     async def get_model(self, request: ModelRequest) -> bytes:
         """Get the current model as a zip file."""

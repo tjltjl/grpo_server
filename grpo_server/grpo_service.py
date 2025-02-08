@@ -50,11 +50,18 @@ def verify_api_key(
     return True
 
 
+def zero_stats():
+    app.state.completion_requests_served = 0
+    app.state.reward_requests_served = 0
+
+
 @asynccontextmanager
 async def lifespan(app: fastapi.FastAPI):
     settings = get_settings()
     logger.critical("Settings:\n%s", settings)
     app.state.queuer = None
+    app.state.training_settings = None
+    zero_stats()
     yield
 
 
@@ -84,6 +91,8 @@ async def start(training_settings: TrainingSettings):
     app.state.queuer = grpo_queuer.create_queuer(training_settings, settings.output_dir)
     app.state.queuer_context = app.state.queuer.context()
     await app.state.queuer_context.__aenter__()
+    app.state.training_settings = training_settings
+    zero_stats()
 
     return {"status": "started"}
 
@@ -93,17 +102,20 @@ async def stop():
     await app.state.queuer_context.__aexit__(None, None, None)
     app.state.queuer = None
     app.state.queuer_context = None
+    app.state.training_settings = None
 
     return {"status": "stopped"}
 
 
 @app.post("/completions", response_model=CompletionsResponse)
 async def completions(request: CompletionsRequest) -> CompletionsResponse:
+    app.state.completion_requests_served += 1
     return await get_queuer().get_completions(request)
 
 
 @app.post("/rewards")
 async def rewards(request: RewardsRequest) -> RewardsResponse:
+    app.state.reward_requests_served += 1
 
     return await get_queuer().rewards(request)
 
@@ -114,6 +126,15 @@ async def rewards(request: RewardsRequest) -> RewardsResponse:
 @app.get("/training_settings")
 def training_settings() -> TrainingSettings:
     return get_settings().training
+
+
+@app.get("/status", response_model=StatusResponse)
+def status() -> StatusResponse:
+    return StatusResponse(
+        training_settings=app.state.training_settings,
+        completion_requests_served=app.state.completion_requests_served,
+        reward_requests_served=app.state.reward_requests_served,
+    )
 
 
 # TODO snapshots etc etc
