@@ -7,6 +7,7 @@ from grpo_server.data import (
     RewardsResponse,
     TrainingSettings,
     ModelRequest,
+    StatusResponse,
 )
 
 
