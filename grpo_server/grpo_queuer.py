@@ -60,7 +60,11 @@ class BaseQueuer(ABC):
 
 
 def create_queuer(training_settings: TrainingSettings, output_dir: str):
-    model = transformers.AutoModel.from_pretrained(training_settings.model_id)
+    logger.critical("Loading model")
+    model = transformers.AutoModelForCausalLM.from_pretrained(
+        training_settings.model_id
+    )
+    logger.critical("Loaded model")
 
     grpo_config = trl.trainer.grpo_trainer.GRPOConfig(
         # beta=0.1,
