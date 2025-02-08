@@ -123,11 +123,6 @@ async def rewards(request: RewardsRequest) -> RewardsResponse:
 # Bookkeeping
 
 
-@app.get("/training_settings")
-def training_settings() -> TrainingSettings:
-    return get_settings().training
-
-
 @app.get("/status", response_model=StatusResponse)
 def status() -> StatusResponse:
     return StatusResponse(
