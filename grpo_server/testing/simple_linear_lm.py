@@ -80,3 +80,4 @@ class SimpleLinearLM(PreTrainedModel, GenerationMixin):
 # model from a string
 transformers.AutoConfig.register(SimpleLinearLMConfig.model_type, SimpleLinearLMConfig)
 transformers.AutoModel.register(SimpleLinearLMConfig, SimpleLinearLM)
+transformers.AutoModelForCausalLM.register(SimpleLinearLMConfig, SimpleLinearLM)
