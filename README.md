@@ -1,6 +1,36 @@
 # grpo_server Control-flow-reversed remote grpo training
 
-Basic architecture:
+This package uses a hacked huggingface grpo trainer
+to allow running the model in the cloud and the reward generating
+pieces locally, separately.
+
+Example:
+
+* Run poetry shell; poetry install
+
+* Download a small causal lm model to models/..., e.g. SmolLM-1.7B-Instruct
+
+* Put its path in examples/alphabetical.py
+
+* run
+```
+python -m grpo_server.uvicorn_main --api_key=default_key --output_dir /tmp/output1
+```
+in one terminal to start the server (this is the part
+that we will later run in a docker container in the cloud on a machine
+with lots of GPUs)
+
+* run
+```
+python examples/alphabetical.py
+```
+in another terminal
+
+* Watch as the system learns to output the alphabetized list
+  concisely and accurately.
+
+
+# Basic architecture:
 
 * start_service starts the application
 
@@ -17,8 +47,8 @@ Basic architecture:
   language model to run tests using. Included in main body
   to allow access e.g. from jupyterlab
 
-* `test_data` contains data used in the test, e.g., smolm135 tokenizer (incorporated
-  in the simple linear model too)
+* `test_data` contains data used in the test, e.g.,
+  smolm135 tokenizer (incorporated in the simple linear models as well)
 
 Details:
 
@@ -27,9 +57,10 @@ Details:
 
     * TODO: more control over when to include given input, now it's async (but queued)
 
-Biggest TODOs:
+# Biggest TODOs:
 
 * batches
+* peft (needs configs, automodel -> autopeftmodel)
 * example task containers
 * how to start main container with settings?
 * checkpoint model, load checkpoints
