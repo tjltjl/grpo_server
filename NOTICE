@@ -1,2 +1,8 @@
 grpo_server
 Copyright 2025 Tuomas J. Lukka
+
+Includes parts of huggingface trl
+Copyright 2025 The HuggingFace Team. All rights reserved
+
+Includes parts of huggingface smollm
+Copyright 2024-2025 The HuggingFace Team. All rights reserved
