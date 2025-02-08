@@ -665,6 +665,16 @@ files = [
 ]
 
 [[package]]
+name = "english-words"
+version = "2.0.1"
+description = "Generate sets of english words by combining different word lists"
+optional = false
+python-versions = "*"
+files = [
+    {file = "english-words-2.0.1.tar.gz", hash = "sha256:a4105c57493bb757a3d8973fcf8e1dc05e7ca09c836dff467c3fb445f84bc43d"},
+]
+
+[[package]]
 name = "execnet"
 version = "2.1.1"
 description = "execnet: rapid multi-Python deployment"
@@ -3556,4 +3566,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12,<3.13"
-content-hash = "9fb58b4fc42315669243e9b4d29118349ea8d066e5c1a64a922e44b46a612535"
+content-hash = "a84ca385e2bf8eff694c2e5f4cfb998b37254dbb138a41cafcf15004d7bd6238"
