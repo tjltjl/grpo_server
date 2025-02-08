@@ -4,6 +4,14 @@ This package uses a hacked huggingface grpo trainer
 to allow running the model in the cloud and the reward generating
 pieces locally, separately.
 
+See examples/alphabetical.py for an example: a task
+is defined by using the grpo_server.grpo_client package
+and can ask for completions and later provide feedback
+on those completions.
+
+INCOMPLETE, STILL MISSING VITAL PIECES SUFH AS PEFT BUT
+CAN ALREADY RUN DEMOS USING SMALL MODELS
+
 Example:
 
 * Run poetry shell; poetry install
